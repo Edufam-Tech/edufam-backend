@@ -1,0 +1,9 @@
+# Ignore all files in uploads directory except .gitkeep and .gitignore
+*
+!.gitkeep
+!.gitignore
+
+# This ensures:
+# - The uploads folder structure exists in git
+# - No actual uploaded files are committed (security)
+# - Clean repository with only necessary files 
