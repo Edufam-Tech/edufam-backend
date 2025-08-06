@@ -29,7 +29,7 @@ const securityHeaders = helmet({
 const corsOptions = {
   origin: function (origin, callback) {
     const allowedOrigins = [
-      process.env.SCHOOL_APP_URL || 'http://localhost:3000',
+      process.env.SCHOOL_APP_URL || 'http://localhost:5173',
       process.env.ADMIN_APP_URL || 'http://localhost:3001',
       // Add production URLs when deployed
       'https://school.edufam.com',

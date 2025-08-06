@@ -201,6 +201,41 @@ router.get('/', (req, res) => {
  * ===========================
  */
 router.use('/auth', authRoutes); // Auth routes handle their own authentication
+
+// Public job postings route for landing page
+router.get('/public/job-postings', async (req, res) => {
+  try {
+    const { query } = require('../config/database');
+    
+    // Get all active job postings from all schools
+    const postings = await query(`
+      SELECT 
+        jp.*,
+        s.name as school_name,
+        d.name as department_name
+      FROM job_postings jp
+      JOIN schools s ON jp.school_id = s.id
+      LEFT JOIN departments d ON jp.department_id = d.id
+      WHERE jp.status = 'active'
+      ORDER BY jp.created_at DESC
+      LIMIT 20
+    `);
+
+    res.json({
+      success: true,
+      data: postings.rows,
+      message: 'Job postings retrieved successfully'
+    });
+  } catch (error) {
+    console.error('Error fetching public job postings:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch job postings',
+      message: error.message
+    });
+  }
+});
+
 router.get('/health', (req, res) => {
   res.json({ 
     status: 'healthy', 
