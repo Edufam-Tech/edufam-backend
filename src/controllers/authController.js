@@ -15,8 +15,14 @@ class AuthController {
     const ipAddress = req.ip;
     const userAgent = req.get('User-Agent');
 
-    // Find user by email and user type
-    const user = await userService.findUserByEmail(email, userType);
+    // If userType is not provided, try to find user by email only
+    let user;
+    if (userType) {
+      user = await userService.findUserByEmail(email, userType);
+    } else {
+      // Try to find user by email regardless of type
+      user = await userService.findUserByEmail(email);
+    }
     
     if (!user) {
       // For non-existent users, we don't need to track failed login attempts

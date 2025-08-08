@@ -596,7 +596,38 @@ class GradeController {
   }
 
   static async getCurriculumComparison(req, res, next) {
-    res.status(200).json({ success: true, message: 'Get curriculum comparison - implementation pending', data: {} });
+    try {
+      const comparison = await Grade.getCurriculumComparison(req.user.school_id);
+      res.json({
+        success: true,
+        data: comparison
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // Get general grade analytics
+  static async getGradeAnalytics(req, res, next) {
+    try {
+      const filters = {
+        academicYearId: req.query.academicYearId,
+        academicTermId: req.query.academicTermId,
+        classId: req.query.classId,
+        subjectId: req.query.subjectId,
+        startDate: req.query.startDate,
+        endDate: req.query.endDate
+      };
+
+      const analytics = await Grade.getGradeAnalytics(req.user.school_id, filters);
+
+      res.json({
+        success: true,
+        data: analytics
+      });
+    } catch (error) {
+      next(error);
+    }
   }
 }
 

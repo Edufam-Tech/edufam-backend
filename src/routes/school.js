@@ -75,6 +75,18 @@ router.delete('/classes/:classId',
   SchoolController.deleteClass
 );
 
+/**
+ * @route   GET /api/school/classes/analytics
+ * @desc    Get class analytics
+ * @access  Private (All school staff)
+ */
+router.get('/classes/analytics',
+  query('academicYearId').optional().isUUID().withMessage('Academic year ID must be a valid UUID'),
+  query('curriculumType').optional().isIn(['CBC', 'IGCSE', '8-4-4', 'IB', 'Cambridge']).withMessage('Invalid curriculum type'),
+  validate,
+  SchoolController.getClassAnalytics
+);
+
 // =============================================================================
 // SUBJECT MANAGEMENT
 // =============================================================================

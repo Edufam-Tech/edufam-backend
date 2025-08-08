@@ -125,6 +125,11 @@ These roles are completely blocked from accessing any system APIs and are manage
 http://localhost:5000/api/v1
 ```
 
+### Versioning
+
+- All routes are accessible under the versioned prefix `/api/v1`.
+- For backward compatibility, legacy `/api` routes are still mounted; prefer `/api/v1` in all clients.
+
 ---
 
 ## 🔗 **COMPREHENSIVE API ENDPOINTS - ALL MODULES IMPLEMENTED**
@@ -491,6 +496,39 @@ GET    /api/v1/performance/reports/school-wide         # School-wide report
 
 ## 🔗 **CRITICAL NEW API ENDPOINTS**
 
+### 🔐 Authentication (School App)
+
+```http
+POST   /api/v1/auth/login            # User login (returns user + tokens)
+POST   /api/v1/auth/refresh-token    # Refresh access token
+POST   /api/v1/auth/logout           # Logout (revoke token/session)
+GET    /api/v1/auth/me               # Current user profile/session
+```
+
+### 📅 School Calendar (NEW)
+
+```http
+GET    /api/v1/calendar/events?month=MM&year=YYYY   # List events in a month
+POST   /api/v1/calendar/events                      # Create event
+PUT    /api/v1/calendar/events/:id                  # Update event
+DELETE /api/v1/calendar/events/:id                  # Delete event
+```
+
+Request body (create/update):
+
+```json
+{
+  "title": "Visiting Day",
+  "description": "Parents visit",
+  "startDate": "2025-08-20T08:00:00Z",
+  "endDate": "2025-08-20T12:00:00Z",
+  "type": "event", // academic | exam | holiday | meeting | event
+  "allDay": false,
+  "curriculum": "CBC",
+  "classes": ["<class-uuid>"]
+}
+```
+
 ### 💰 **Enhanced Financial Management**
 
 #### **M-Pesa Integration (7 NEW ENDPOINTS)**
@@ -646,6 +684,8 @@ GET    /api/v1/academic/grades/curriculum-standards     # Curriculum standards
 GET    /api/v1/academic/grades/analytics/performance    # Performance analytics
 GET    /api/v1/academic/grades/analytics/trends         # Grade trends
 GET    /api/v1/academic/grades/analytics/curriculum-comparison # Curriculum comparison
+GET    /api/v1/academic/gradebook/:classId/:subjectId   # Gradebook data for teacher
+POST   /api/v1/academic/grades/submit-approval/bulk     # Bulk submit grades for approval
 ```
 
 #### **Staff Attendance Management**

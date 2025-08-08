@@ -31,6 +31,7 @@ const realtimeRoutes = require('./realtime');
 const curriculumRoutes = require('./curriculum');
 const securityRoutes = require('./security');
 const complianceRoutes = require('./compliance');
+const calendarRoutes = require('./calendar');
 const trainingRoutes = require('./training');
 const marketplaceRoutes = require('./marketplace');
 const analyticsRoutes = require('./analytics');
@@ -288,6 +289,7 @@ router.use('/reports', schoolAuth, reportsRoutes);
 router.use('/certificates', schoolAuth, certificateRoutes);
 router.use('/invoices', schoolAuth, invoiceRoutes);
 router.use('/appraisals', schoolAuth, appraisalRoutes);
+router.use('/calendar', schoolAuth, calendarRoutes);
 
 // Trip and training management
 router.use('/trips', schoolAuth, tripsRoutes);

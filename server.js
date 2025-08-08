@@ -29,16 +29,38 @@ const PORT = process.env.PORT || 5000;
 
 // Initialize WebSocket service
 const websocketManager = require('./src/services/websocketManager');
-const io = websocketManager.initialize(server);
+websocketManager.initialize(server);
 console.log('🔌 WebSocket server initialized');
 
 // Apply security middleware in order
 app.use(securityHeaders); // Security headers first
-app.use(cors(corsOptions)); // CORS configuration
+
+// Centralized CORS configuration - Apply BEFORE other middleware
+app.use(cors(corsOptions));
+
 app.use(compression()); // Response compression
 app.use(requestLogger); // Request logging
 app.use(checkMaintenanceMode); // Maintenance mode check
 app.use(detectSuspiciousActivity); // Security monitoring
+
+// Add debug logging for CORS issues
+app.use((req, res, next) => {
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
+  console.log('Origin:', req.headers.origin);
+  console.log('User-Agent:', req.headers['user-agent']);
+  
+  // Handle OPTIONS requests globally as backup
+  if (req.method === 'OPTIONS') {
+    console.log('Handling OPTIONS request for:', req.url);
+    res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
+    res.header('Access-Control-Allow-Credentials', 'true');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, Cache-Control, X-Access-Token');
+    return res.status(200).end();
+  }
+  
+  next();
+});
 
 // Body parsing with limits
 app.use(express.json({ 
@@ -90,8 +112,20 @@ app.get('/health', async (req, res) => {
   }
 });
 
+// Handle OPTIONS requests for all API routes
+app.options('*', (req, res) => {
+  console.log('Global OPTIONS handler for:', req.url);
+  res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, Cache-Control, X-Access-Token');
+  res.status(200).end();
+});
+
 // Mount API routes
 app.use('/api', apiRoutes);
+// Versioned alias to match /api/v1/* paths used by frontend and docs
+app.use('/api/v1', apiRoutes);
 
 // 404 handler for unmatched routes
 app.use(notFoundHandler);

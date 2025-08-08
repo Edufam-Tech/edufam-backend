@@ -1105,7 +1105,30 @@ class SchoolController {
   }
 
   static async getEnrollmentTrends(req, res) {
-    res.status(200).json({ success: true, message: 'Get enrollment trends endpoint - implementation pending', data: {} });
+    res.status(200).json({ success: true, message: 'Get enrollment trends - implementation pending', data: {} });
+  }
+
+  // Get class analytics
+  static async getClassAnalytics(req, res) {
+    try {
+      const filters = {
+        academicYearId: req.query.academicYearId,
+        curriculumType: req.query.curriculumType
+      };
+
+      const analytics = await SchoolService.getClassAnalytics(req.user.school_id, filters);
+
+      res.json({
+        success: true,
+        data: analytics
+      });
+    } catch (error) {
+      console.error('Get class analytics error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to get class analytics'
+      });
+    }
   }
 }
 

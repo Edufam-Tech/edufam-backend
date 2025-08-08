@@ -3,52 +3,86 @@ const rateLimit = require('express-rate-limit');
 const { body, validationResult } = require('express-validator');
 
 // Security headers middleware
+// In development, relax CSP and disable HSTS to avoid local HTTP/port issues (e.g., net::ERR_FAILED)
+const isProduction = process.env.NODE_ENV === 'production';
 const securityHeaders = helmet({
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],
-      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
-      fontSrc: ["'self'", "https://fonts.gstatic.com"],
-      imgSrc: ["'self'", "data:", "https:"],
-      scriptSrc: ["'self'"],
-      connectSrc: ["'self'"],
-      frameSrc: ["'none'"],
-      objectSrc: ["'none'"],
-      upgradeInsecureRequests: [],
-    },
-  },
+  contentSecurityPolicy: isProduction
+    ? {
+        directives: {
+          defaultSrc: ["'self'"],
+          styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+          fontSrc: ["'self'", "https://fonts.gstatic.com"],
+          imgSrc: ["'self'", "data:", "https:"],
+          scriptSrc: ["'self'"],
+          connectSrc: ["'self'"],
+          frameSrc: ["'none'"],
+          objectSrc: ["'none'"],
+          upgradeInsecureRequests: [],
+        },
+      }
+    : false,
   crossOriginEmbedderPolicy: false,
-  hsts: {
-    maxAge: 31536000,
-    includeSubDomains: true,
-    preload: true
-  }
+  hsts: isProduction
+    ? {
+        maxAge: 31536000,
+        includeSubDomains: true,
+        preload: true,
+      }
+    : false,
 });
 
 // CORS configuration for school and admin apps
 const corsOptions = {
   origin: function (origin, callback) {
+    // Normalize environment-configured origins (comma-separated)
+    const envOrigins = (process.env.ALLOWED_ORIGINS || '')
+      .split(',')
+      .map((o) => o.trim())
+      .filter(Boolean);
+
     const allowedOrigins = [
       process.env.SCHOOL_APP_URL || 'http://localhost:5173',
       process.env.ADMIN_APP_URL || 'http://localhost:3001',
-      // Add production URLs when deployed
+      'http://localhost:3000',
+      'http://127.0.0.1:5173',
+      'http://127.0.0.1:3000',
+      'http://127.0.0.1:3001',
       'https://school.edufam.com',
-      'https://admin.edufam.com'
+      'https://admin.edufam.com',
+      ...envOrigins,
     ];
-    
+
+    const allowedPatterns = [
+      /^http:\/\/localhost:\d+$/, // any localhost port
+      /^http:\/\/127\.0\.0\.1:\d+$/, // any 127.0.0.1 port
+    ];
+
     // Allow requests with no origin (mobile apps, Postman, etc.)
     if (!origin) return callback(null, true);
-    
-    if (allowedOrigins.indexOf(origin) !== -1) {
+
+    const isExplicitlyAllowed = allowedOrigins.includes(origin);
+    const matchesPattern = allowedPatterns.some((re) => re.test(origin));
+
+    if (isExplicitlyAllowed || matchesPattern) {
       callback(null, true);
     } else {
+      console.log('CORS blocked origin:', origin);
       callback(new Error('Not allowed by CORS policy'));
     }
   },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-  exposedHeaders: ['X-Total-Count', 'X-Page-Count']
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: [
+    'Origin',
+    'X-Requested-With',
+    'Content-Type',
+    'Accept',
+    'Authorization',
+    'Cache-Control',
+    'X-Access-Token',
+  ],
+  exposedHeaders: ['X-Total-Count', 'X-Page-Count'],
+  optionsSuccessStatus: 200, // Some legacy browsers choke on 204
 };
 
 // Rate limiting configurations

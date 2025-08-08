@@ -14,6 +14,11 @@ const router = express.Router();
 // Apply authentication rate limiting to all auth routes
 router.use(rateLimits.auth);
 
+// Handle OPTIONS requests for CORS preflight
+router.options('/login', (req, res) => {
+  res.status(200).end();
+});
+
 // Public authentication routes (no authentication required)
 router.post('/login', 
   validationChains.login,

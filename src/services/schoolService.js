@@ -644,10 +644,60 @@ class SchoolService {
   // Get current academic term for a school
   static async getCurrentAcademicTerm(schoolId) {
     try {
-      const currentTerm = await AcademicTerm.getCurrent(schoolId);
-      return currentTerm;
+      return await AcademicTerm.getCurrent(schoolId);
     } catch (error) {
       throw error;
+    }
+  }
+
+  // Get class analytics
+  static async getClassAnalytics(schoolId, filters = {}) {
+    try {
+      const { query } = require('../config/database');
+      
+      let sql = `
+        SELECT 
+          COUNT(c.id) as total_classes,
+          COUNT(c.id) FILTER (WHERE c.is_active = true) as active_classes,
+          COUNT(DISTINCT c.curriculum_type) as curriculum_types,
+          AVG(c.current_enrollment) as average_enrollment,
+          SUM(c.current_enrollment) as total_students,
+          COUNT(c.id) FILTER (WHERE c.current_enrollment >= c.capacity * 0.9) as near_capacity_classes,
+          COUNT(c.id) FILTER (WHERE c.current_enrollment < c.capacity * 0.5) as under_enrolled_classes
+        FROM classes c
+        WHERE c.school_id = $1
+      `;
+      
+      const params = [schoolId];
+      let paramCount = 1;
+
+      if (filters.academicYearId) {
+        paramCount++;
+        sql += ` AND c.academic_year_id = $${paramCount}`;
+        params.push(filters.academicYearId);
+      }
+
+      if (filters.curriculumType) {
+        paramCount++;
+        sql += ` AND c.curriculum_type = $${paramCount}`;
+        params.push(filters.curriculumType);
+      }
+
+      const result = await query(sql, params);
+      const analytics = result.rows[0];
+
+      // Calculate percentages
+      analytics.enrollment_rate = analytics.total_classes > 0 
+        ? Math.round((analytics.total_students / (analytics.total_classes * analytics.average_enrollment)) * 100) 
+        : 0;
+      
+      analytics.capacity_utilization = analytics.total_classes > 0 
+        ? Math.round((analytics.near_capacity_classes / analytics.total_classes) * 100) 
+        : 0;
+
+      return analytics;
+    } catch (error) {
+      throw new DatabaseError('Failed to get class analytics');
     }
   }
 }

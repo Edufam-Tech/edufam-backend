@@ -1,5 +1,5 @@
 {
-  "timestamp": "2025-08-06T16:37:22.424Z",
+  "timestamp": "2025-08-08T12:27:44.491Z",
   "summary": {
     "totalTests": 12,
     "passedTests": 0,
@@ -11,73 +11,73 @@
       "test": "Database Health",
       "status": "FAIL",
       "details": "",
-      "timestamp": "2025-08-06T16:37:22.308Z"
+      "timestamp": "2025-08-08T12:27:44.435Z"
     },
     {
       "test": "Invalid Login Protection",
       "status": "FAIL",
       "details": "Unexpected error: ",
-      "timestamp": "2025-08-06T16:37:22.318Z"
+      "timestamp": "2025-08-08T12:27:44.441Z"
     },
     {
       "test": "Admin Login",
       "status": "FAIL",
       "details": "",
-      "timestamp": "2025-08-06T16:37:22.324Z"
+      "timestamp": "2025-08-08T12:27:44.445Z"
     },
     {
       "test": "User Management",
       "status": "FAIL",
       "details": "No admin token available",
-      "timestamp": "2025-08-06T16:37:22.327Z"
+      "timestamp": "2025-08-08T12:27:44.445Z"
     },
     {
       "test": "File Upload",
       "status": "FAIL",
       "details": "No admin token available",
-      "timestamp": "2025-08-06T16:37:22.328Z"
+      "timestamp": "2025-08-08T12:27:44.446Z"
     },
     {
       "test": "Rate Limiting",
       "status": "WARN",
       "details": "Rate limiting might not be working",
-      "timestamp": "2025-08-06T16:37:22.388Z"
+      "timestamp": "2025-08-08T12:27:44.475Z"
     },
     {
       "test": "CORS Configuration",
       "status": "WARN",
       "details": "Could not test CORS",
-      "timestamp": "2025-08-06T16:37:22.396Z"
+      "timestamp": "2025-08-08T12:27:44.477Z"
     },
     {
       "test": "Input Validation",
       "status": "WARN",
       "details": "Unexpected validation response",
-      "timestamp": "2025-08-06T16:37:22.399Z"
+      "timestamp": "2025-08-08T12:27:44.479Z"
     },
     {
       "test": "API Consistency: GET http://localhost:5000/health",
       "status": "FAIL",
       "details": "",
-      "timestamp": "2025-08-06T16:37:22.404Z"
+      "timestamp": "2025-08-08T12:27:44.482Z"
     },
     {
       "test": "API Consistency: GET http://localhost:5000/api",
       "status": "FAIL",
       "details": "",
-      "timestamp": "2025-08-06T16:37:22.408Z"
+      "timestamp": "2025-08-08T12:27:44.484Z"
     },
     {
       "test": "API Consistency: GET http://localhost:5000/api/auth/me",
       "status": "FAIL",
       "details": "",
-      "timestamp": "2025-08-06T16:37:22.412Z"
+      "timestamp": "2025-08-08T12:27:44.486Z"
     },
     {
       "test": "API Consistency: GET http://localhost:5000/api/users/profile",
       "status": "FAIL",
       "details": "",
-      "timestamp": "2025-08-06T16:37:22.415Z"
+      "timestamp": "2025-08-08T12:27:44.488Z"
     }
   ],
   "errors": [
@@ -85,55 +85,55 @@
       "test": "Database Health",
       "status": "FAIL",
       "details": "",
-      "timestamp": "2025-08-06T16:37:22.308Z"
+      "timestamp": "2025-08-08T12:27:44.435Z"
     },
     {
       "test": "Invalid Login Protection",
       "status": "FAIL",
       "details": "Unexpected error: ",
-      "timestamp": "2025-08-06T16:37:22.318Z"
+      "timestamp": "2025-08-08T12:27:44.441Z"
     },
     {
       "test": "Admin Login",
       "status": "FAIL",
       "details": "",
-      "timestamp": "2025-08-06T16:37:22.324Z"
+      "timestamp": "2025-08-08T12:27:44.445Z"
     },
     {
       "test": "User Management",
       "status": "FAIL",
       "details": "No admin token available",
-      "timestamp": "2025-08-06T16:37:22.327Z"
+      "timestamp": "2025-08-08T12:27:44.445Z"
     },
     {
       "test": "File Upload",
       "status": "FAIL",
       "details": "No admin token available",
-      "timestamp": "2025-08-06T16:37:22.328Z"
+      "timestamp": "2025-08-08T12:27:44.446Z"
     },
     {
       "test": "API Consistency: GET http://localhost:5000/health",
       "status": "FAIL",
       "details": "",
-      "timestamp": "2025-08-06T16:37:22.404Z"
+      "timestamp": "2025-08-08T12:27:44.482Z"
     },
     {
       "test": "API Consistency: GET http://localhost:5000/api",
       "status": "FAIL",
       "details": "",
-      "timestamp": "2025-08-06T16:37:22.408Z"
+      "timestamp": "2025-08-08T12:27:44.484Z"
     },
     {
       "test": "API Consistency: GET http://localhost:5000/api/auth/me",
       "status": "FAIL",
       "details": "",
-      "timestamp": "2025-08-06T16:37:22.412Z"
+      "timestamp": "2025-08-08T12:27:44.486Z"
     },
     {
       "test": "API Consistency: GET http://localhost:5000/api/users/profile",
       "status": "FAIL",
       "details": "",
-      "timestamp": "2025-08-06T16:37:22.415Z"
+      "timestamp": "2025-08-08T12:27:44.488Z"
     }
   ],
   "warnings": [
@@ -141,19 +141,19 @@
       "test": "Rate Limiting",
       "status": "WARN",
       "details": "Rate limiting might not be working",
-      "timestamp": "2025-08-06T16:37:22.388Z"
+      "timestamp": "2025-08-08T12:27:44.475Z"
     },
     {
       "test": "CORS Configuration",
       "status": "WARN",
       "details": "Could not test CORS",
-      "timestamp": "2025-08-06T16:37:22.396Z"
+      "timestamp": "2025-08-08T12:27:44.477Z"
     },
     {
       "test": "Input Validation",
       "status": "WARN",
       "details": "Unexpected validation response",
-      "timestamp": "2025-08-06T16:37:22.399Z"
+      "timestamp": "2025-08-08T12:27:44.479Z"
     }
   ]
 }

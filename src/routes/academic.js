@@ -6,6 +6,7 @@ const { authenticate, requireRole } = require('../middleware/auth');
 const AssessmentController = require('../controllers/assessmentController');
 const GradeController = require('../controllers/gradeController');
 const AttendanceController = require('../controllers/attendanceController');
+const GradebookController = require('../controllers/gradebookController');
 
 // Assessment Routes
 router.post('/assessments', 
@@ -102,6 +103,32 @@ router.post('/grades/bulk-entry',
   GradeController.bulkEnterGrades
 );
 
+// Additional endpoint for teachers to submit multiple grades for approval in one call
+router.post('/grades/submit-approval/bulk',
+  authenticate,
+  requireRole(['teacher']),
+  async (req, res, next) => {
+    try {
+      const { grades } = req.body; // [{ gradeId }]
+      if (!Array.isArray(grades) || grades.length === 0) {
+        return res.status(400).json({ success: false, message: 'grades array is required' });
+      }
+      const { submitForApproval } = require('../controllers/gradeController');
+      const results = [];
+      for (const item of grades) {
+        req.body.gradeId = item.gradeId;
+        // call controller directly per item
+        // eslint-disable-next-line no-await-in-loop
+        await submitForApproval(req, {
+          json: (payload) => results.push(payload.data),
+          status: () => ({ json: (p) => results.push(p.data) })
+        }, next);
+      }
+      res.json({ success: true, message: 'Bulk submission completed', data: results });
+    } catch (e) { next(e); }
+  }
+);
+
 router.post('/grades/submit-approval', 
   authenticate, 
   requireRole(['teacher']), 
@@ -166,6 +193,11 @@ router.get('/grades/curriculum-standards',
 );
 
 // Grade Analytics Enhancement
+router.get('/grades/analytics', 
+  authenticate, 
+  GradeController.getGradeAnalytics
+);
+
 router.get('/grades/analytics/performance', 
   authenticate, 
   GradeController.getPerformanceAnalytics
@@ -179,6 +211,13 @@ router.get('/grades/analytics/trends',
 router.get('/grades/analytics/curriculum-comparison', 
   authenticate, 
   GradeController.getCurriculumComparison
+);
+
+// Gradebook data for class and subject
+router.get('/gradebook/:classId/:subjectId',
+  authenticate,
+  requireRole(['teacher', 'principal', 'school_director']),
+  GradebookController.getGradebookData
 );
 
 // Attendance Routes

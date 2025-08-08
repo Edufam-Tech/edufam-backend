@@ -629,6 +629,84 @@ class Grade {
 
     return errors;
   }
+
+  // Get general grade analytics for school
+  static async getGradeAnalytics(schoolId, filters = {}) {
+    try {
+      let sql = `
+        SELECT 
+          COUNT(g.id) as total_grades,
+          COUNT(g.id) FILTER (WHERE g.status = 'approved') as approved_grades,
+          COUNT(g.id) FILTER (WHERE g.status = 'draft') as draft_grades,
+          COUNT(g.id) FILTER (WHERE g.status = 'submitted') as submitted_grades,
+          AVG(g.marks_obtained) as average_grade,
+          MIN(g.marks_obtained) as lowest_grade,
+          MAX(g.marks_obtained) as highest_grade,
+          COUNT(g.id) FILTER (WHERE g.is_absent = true) as absent_count,
+          COUNT(g.id) FILTER (WHERE g.is_exempted = true) as exempted_count,
+          COUNT(DISTINCT g.student_id) as total_students,
+          COUNT(DISTINCT g.assessment_id) as total_assessments
+        FROM grades g
+        JOIN assessments a ON g.assessment_id = a.id
+        WHERE g.school_id = $1
+      `;
+      
+      const params = [schoolId];
+      let paramCount = 1;
+
+      if (filters.academicYearId) {
+        paramCount++;
+        sql += ` AND a.academic_year_id = $${paramCount}`;
+        params.push(filters.academicYearId);
+      }
+
+      if (filters.academicTermId) {
+        paramCount++;
+        sql += ` AND a.academic_term_id = $${paramCount}`;
+        params.push(filters.academicTermId);
+      }
+
+      if (filters.classId) {
+        paramCount++;
+        sql += ` AND a.class_id = $${paramCount}`;
+        params.push(filters.classId);
+      }
+
+      if (filters.subjectId) {
+        paramCount++;
+        sql += ` AND a.subject_id = $${paramCount}`;
+        params.push(filters.subjectId);
+      }
+
+      if (filters.startDate) {
+        paramCount++;
+        sql += ` AND a.assessment_date >= $${paramCount}`;
+        params.push(filters.startDate);
+      }
+
+      if (filters.endDate) {
+        paramCount++;
+        sql += ` AND a.assessment_date <= $${paramCount}`;
+        params.push(filters.endDate);
+      }
+
+      const result = await query(sql, params);
+      const analytics = result.rows[0];
+
+      // Calculate percentages
+      analytics.approval_rate = analytics.total_grades > 0 
+        ? Math.round((analytics.approved_grades / analytics.total_grades) * 100) 
+        : 0;
+      
+      analytics.submission_rate = analytics.total_grades > 0 
+        ? Math.round((analytics.submitted_grades / analytics.total_grades) * 100) 
+        : 0;
+
+      return analytics;
+    } catch (error) {
+      throw new DatabaseError('Failed to get grade analytics');
+    }
+  }
 }
 
 module.exports = Grade; 

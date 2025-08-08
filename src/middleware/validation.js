@@ -2,6 +2,11 @@ const { body, param, query, validationResult } = require('express-validator');
 
 // Handle validation errors
 const handleValidationErrors = (req, res, next) => {
+  // Skip validation for OPTIONS requests
+  if (req.method === 'OPTIONS') {
+    return next();
+  }
+  
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     return res.status(400).json({
@@ -342,7 +347,7 @@ const validationChains = {
   login: [
     validationRules.email,
     body('password').notEmpty().withMessage('Password is required'),
-    validationRules.userType,
+    body('userType').optional().isIn(['school_user', 'admin_user']).withMessage('User type must be either school_user or admin_user'),
     handleValidationErrors
   ],
   
