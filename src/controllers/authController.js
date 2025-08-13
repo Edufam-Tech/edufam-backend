@@ -65,9 +65,9 @@ class AuthController {
     // Reset failed login attempts on successful login
     await authService.resetFailedLoginAttempts(user.id);
 
-    // Allow parent users for mobile parent application
-    if (!['school_user', 'parent'].includes(user.user_type)) {
-      throw new AuthenticationError('Only school users or parents can access this application');
+    // Allow admin users (admin application), school users (school application), and parents (mobile)
+    if (!['school_user', 'admin_user', 'parent'].includes(user.user_type)) {
+      throw new AuthenticationError('Account type not allowed');
     }
 
     // Generate JWT tokens

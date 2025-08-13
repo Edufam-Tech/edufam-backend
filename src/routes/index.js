@@ -65,6 +65,7 @@ const monitoringRoutes = require('./admin/monitoring');
 const dataMigrationRoutes = require('./admin/dataMigration');
 const integrationRoutes = require('./admin/integrations');
 const adminComplianceRoutes = require('./admin/compliance');
+const adminSupportRoutes = require('./admin/support');
 
 
 
@@ -352,6 +353,7 @@ router.use('/admin/monitoring', adminAuth, monitoringRoutes);
 router.use('/admin/migration', adminAuth, dataMigrationRoutes);
 router.use('/admin/integrations', adminAuth, integrationRoutes);
 router.use('/admin/compliance', adminAuth, adminComplianceRoutes);
+router.use('/admin/support', adminAuth, adminSupportRoutes);
 
 /**
  * ===========================
@@ -380,49 +382,39 @@ router.use('*', (req, res) => {
 // Global error handler
 router.use((error, req, res, next) => {
   console.error('API Error:', error);
-  
-  // Handle specific error types
-  if (error.name === 'ValidationError') {
-    return res.status(400).json({
-      success: false,
-      error: {
-        type: 'ValidationError',
-        message: error.message,
-        details: error.errors
-      }
-    });
-  }
-  
-  if (error.name === 'UnauthorizedError') {
-    return res.status(401).json({
-      success: false,
-      error: {
-        type: 'AuthenticationError',
-        message: 'Authentication required'
-      }
-    });
-  }
 
-  if (error.name === 'AccessDeniedError') {
-    return res.status(403).json({
-      success: false,
-      error: {
-        type: 'AccessDeniedError',
-        message: error.message || 'Access denied'
-      }
-    });
-  }
-  
-  // Default error response
-  res.status(500).json({
+  // Prefer status codes from our AppError classes
+  const status = error.statusCode
+    || (error.name === 'UnauthorizedError' ? 401
+    : error.name === 'AccessDeniedError' ? 403
+    : error.name === 'ValidationError' ? 400
+    : error.name === 'AuthenticationError' ? 401
+    : 500);
+
+  // Map error type/name for client readability
+  const type = error.name
+    || (status === 401 ? 'AuthenticationError'
+    : status === 403 ? 'AccessDeniedError'
+    : status === 400 ? 'ValidationError'
+    : 'InternalServerError');
+
+  // Build base response
+  const payload = {
     success: false,
     error: {
-      type: 'InternalServerError',
-      message: process.env.NODE_ENV === 'production' 
-        ? 'An unexpected error occurred' 
-        : error.message
-    }
-  });
+      type,
+      message: (process.env.NODE_ENV === 'production' && status >= 500)
+        ? 'An unexpected error occurred'
+        : (error.message || 'Request failed'),
+    },
+  };
+
+  // Attach validation details when present
+  if (type === 'ValidationError' && (error.errors || error.details)) {
+    payload.error.details = error.errors || error.details;
+  }
+
+  res.status(status).json(payload);
 });
 
 module.exports = router; 
