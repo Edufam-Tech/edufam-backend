@@ -116,12 +116,15 @@ const advancedMultiTenantMiddleware = async (req, res, next) => {
       }
     }
 
-    // Set database session variables for RLS
-    await req.db?.query?.('SET app.current_school_id = $1', [req.activeSchoolId]) ||
-          require('../config/database').query('SET app.current_school_id = $1', [req.activeSchoolId]);
-    
-    await req.db?.query?.('SET app.current_user_id = $1', [user.userId]) ||
-          require('../config/database').query('SET app.current_user_id = $1', [user.userId]);
+    // Set database session variables for RLS (non-fatal)
+    try {
+      await (req.db?.query?.("SELECT set_config('app.current_school_id', $1, false)", [req.activeSchoolId]) ||
+        require('../config/database').query("SELECT set_config('app.current_school_id', $1, false)", [req.activeSchoolId]));
+      await (req.db?.query?.("SELECT set_config('app.current_user_id', $1, false)", [user.userId]) ||
+        require('../config/database').query("SELECT set_config('app.current_user_id', $1, false)", [user.userId]));
+    } catch (rlsError) {
+      console.warn('RLS configuration error (multi-tenant):', rlsError.message);
+    }
 
     // Add tenant context for logging and audit
     req.tenantContext = {

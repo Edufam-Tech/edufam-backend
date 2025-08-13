@@ -25,6 +25,28 @@ const handleValidationErrors = (req, res, next) => {
   next();
 };
 
+// Sanitize then validate helper to normalize inputs before running validators
+const sanitizeAndValidate = (validationChain) => {
+  return [
+    (req, res, next) => {
+      try {
+        // Trim strings in body
+        if (req.body && typeof req.body === 'object') {
+          for (const key in req.body) {
+            if (typeof req.body[key] === 'string') {
+              req.body[key] = req.body[key].trim();
+            }
+          }
+        }
+        next();
+      } catch (_) {
+        next();
+      }
+    },
+    ...validationChain
+  ];
+};
+
 // Common validation rules
 const validationRules = {
   // Email validation
@@ -70,14 +92,14 @@ const validationRules = {
   
   // User type validation
   userType: body('userType')
-    .isIn(['school_user', 'admin_user'])
-    .withMessage('User type must be either school_user or admin_user'),
+    .isIn(['school_user', 'admin_user', 'parent'])
+    .withMessage('User type must be either school_user, admin_user, or parent'),
   
   // Role validation
   role: body('role')
     .isIn([
       'school_director', 'principal', 'teacher', 'parent', 'hr', 'finance',
-      'super_admin', 'engineer', 'support_hr', 'sales_marketing', 'admin_finance'
+      'super_admin', 'edufam_admin', 'engineer', 'support_hr', 'sales_marketing', 'admin_finance'
     ])
     .withMessage('Invalid role specified'),
   
@@ -347,7 +369,7 @@ const validationChains = {
   login: [
     validationRules.email,
     body('password').notEmpty().withMessage('Password is required'),
-    body('userType').optional().isIn(['school_user', 'admin_user']).withMessage('User type must be either school_user or admin_user'),
+    body('userType').optional().isIn(['school_user', 'admin_user', 'parent']).withMessage('User type must be either school_user, admin_user, or parent'),
     handleValidationErrors
   ],
   
@@ -594,6 +616,7 @@ module.exports = {
   validationChains,
   handleValidationErrors,
   validate: handleValidationErrors, // Add the general validate function
+  sanitizeAndValidate,
   validateSchoolData,
   validateAcademicYearData,
   validateAcademicTermData,

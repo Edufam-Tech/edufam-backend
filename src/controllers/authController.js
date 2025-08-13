@@ -12,16 +12,21 @@ class AuthController {
   // User login
   login = asyncHandler(async (req, res) => {
     const { email, password, userType } = req.body;
+    const normalizedEmail = (email || '').toLowerCase().trim();
     const ipAddress = req.ip;
     const userAgent = req.get('User-Agent');
 
     // If userType is not provided, try to find user by email only
     let user;
     if (userType) {
-      user = await userService.findUserByEmail(email, userType);
+      user = await userService.findUserByEmail(normalizedEmail, userType);
+      // Fallback: if not found with specified type, try without type filter
+      if (!user) {
+        user = await userService.findUserByEmail(normalizedEmail);
+      }
     } else {
       // Try to find user by email regardless of type
-      user = await userService.findUserByEmail(email);
+      user = await userService.findUserByEmail(normalizedEmail);
     }
     
     if (!user) {
@@ -59,6 +64,11 @@ class AuthController {
 
     // Reset failed login attempts on successful login
     await authService.resetFailedLoginAttempts(user.id);
+
+    // Allow parent users for mobile parent application
+    if (!['school_user', 'parent'].includes(user.user_type)) {
+      throw new AuthenticationError('Only school users or parents can access this application');
+    }
 
     // Generate JWT tokens
     const tokens = authService.generateTokens(user);

@@ -344,6 +344,32 @@ router.post('/procurement/purchase-orders',
   InventoryController.createPurchaseOrder
 );
 
+// Frontend-friendly aliases without the /procurement segment
+router.get('/requests',
+  requireRole(['principal', 'school_director', 'admin', 'procurement_officer', 'super_admin']),
+  (req, res, next) => InventoryController.getProcurementRequests(req, res, next)
+);
+
+router.post('/requests',
+  (req, res, next) => InventoryController.createProcurementRequest(req, res, next)
+);
+
+router.get('/purchase-orders',
+  requireRole(['principal', 'school_director', 'procurement_officer', 'super_admin']),
+  (req, res, next) => {
+    // reuse quotes handler if purchase orders not yet implemented
+    if (InventoryController.getPurchaseOrders) {
+      return InventoryController.getPurchaseOrders(req, res, next);
+    }
+    return InventoryController.getProcurementQuotes(req, res, next);
+  }
+);
+
+router.get('/vendors',
+  requireRole(['principal', 'school_director', 'admin', 'procurement_officer', 'super_admin']),
+  (req, res, next) => InventoryController.getVendors(req, res, next)
+);
+
 // =============================================================================
 // ASSET ALLOCATION
 // =============================================================================

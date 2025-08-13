@@ -151,6 +151,33 @@ class Grade {
 
       return result.rows[0];
     } catch (error) {
+      // Fallback if created_by column is missing in current schema
+      if (error.code === '42703') {
+        const fallback = await query(`
+          SELECT 
+            g.*,
+            s.name as school_name,
+            a.title as assessment_title,
+            a.total_marks,
+            a.pass_marks,
+            st.first_name || ' ' || st.last_name as student_name,
+            st.student_number,
+            NULL as created_by_name,
+            sb.first_name || ' ' || sb.last_name as submitted_by_name,
+            ap.first_name || ' ' || ap.last_name as approved_by_name
+          FROM grades g
+          JOIN schools s ON g.school_id = s.id
+          JOIN assessments a ON g.assessment_id = a.id
+          JOIN students st ON g.student_id = st.id
+          LEFT JOIN users sb ON g.submitted_by = sb.id
+          LEFT JOIN users ap ON g.approved_by = ap.id
+          WHERE g.id = $1
+        `, [gradeId]);
+        if (fallback.rows.length === 0) {
+          throw new NotFoundError('Grade not found');
+        }
+        return fallback.rows[0];
+      }
       if (error instanceof NotFoundError) {
         throw error;
       }
@@ -205,6 +232,30 @@ class Grade {
       const result = await query(sql, params);
       return result.rows;
     } catch (error) {
+      if (error.code === '42703') {
+        // Fallback without created_by join/column
+        let sql = `
+          SELECT 
+            g.*,
+            st.first_name || ' ' || st.last_name as student_name,
+            st.student_number,
+            sb.first_name || ' ' || sb.last_name as submitted_by_name,
+            ap.first_name || ' ' || ap.last_name as approved_by_name
+          FROM grades g
+          JOIN students st ON g.student_id = st.id
+          LEFT JOIN users sb ON g.submitted_by = sb.id
+          LEFT JOIN users ap ON g.approved_by = ap.id
+          WHERE g.assessment_id = $1
+        `;
+        const params = [assessmentId];
+        let paramCount = 1;
+        if (filters.status) { paramCount++; sql += ` AND g.status = $${paramCount}`; params.push(filters.status); }
+        if (filters.isAbsent !== undefined) { paramCount++; sql += ` AND g.is_absent = $${paramCount}`; params.push(filters.isAbsent); }
+        if (filters.isExempted !== undefined) { paramCount++; sql += ` AND g.is_exempted = $${paramCount}`; params.push(filters.isExempted); }
+        sql += ` ORDER BY st.first_name, st.last_name`;
+        const fallback = await query(sql, params);
+        return fallback.rows;
+      }
       throw new DatabaseError('Failed to find assessment grades');
     }
   }
@@ -587,6 +638,16 @@ class Grade {
     }
 
     return null;
+  }
+
+  // Minimal curriculum comparison placeholder to satisfy controller
+  static async getCurriculumComparison(schoolId) {
+    try {
+      // Return empty comparison when not implemented
+      return [];
+    } catch {
+      return [];
+    }
   }
 
   // Log grade activity

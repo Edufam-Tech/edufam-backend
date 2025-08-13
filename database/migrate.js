@@ -15,9 +15,51 @@ const runMigration = async () => {
     const schema = fs.readFileSync(schemaPath, 'utf8');
     console.log('📄 Schema file loaded successfully');
     
-    // Execute schema creation
-    console.log('⚡ Executing database schema creation...');
-    await query(schema);
+    // Execute schema creation only if base tables missing
+    const baseTableCheck = await query(`
+      SELECT COUNT(*)::int AS count
+      FROM information_schema.tables
+      WHERE table_schema = 'public' AND table_name = 'schools'
+    `);
+    if (baseTableCheck.rows[0].count === 0) {
+      console.log('⚡ Executing database schema creation...');
+      await query(schema);
+    } else {
+      console.log('ℹ️  Base schema detected, skipping schema.sql');
+    }
+
+    // Apply module migrations in a safe order
+    const migrationFiles = [
+      'add-academic-tables.sql',
+      'add-student-tables.sql',
+      'add-academic-module.sql',
+      'add-hr-module.sql',
+      '2025-08-08_performance_appraisals.sql',
+      '2025-08-11_performance_appraisals_additions.sql',
+      '2025-08-11_examinations.sql',
+      '2025-08-11_hr_recruitment.sql'
+    ];
+
+    for (const file of migrationFiles) {
+      const p = path.join(__dirname, file);
+      if (!fs.existsSync(p)) {
+        console.log(`ℹ️  Skipping missing migration: ${file}`);
+        continue;
+      }
+      console.log(`⚙️  Applying migration: ${file}`);
+      const sql = fs.readFileSync(p, 'utf8');
+      try {
+        await query(sql);
+        console.log(`✅ Applied: ${file}`);
+      } catch (err) {
+        const msg = String(err && err.message || err);
+        if (/already exists|duplicate|exists/.test(msg)) {
+          console.log(`ℹ️  Skipping statements that already exist in: ${file}`);
+          continue;
+        }
+        throw err;
+      }
+    }
     
     // Verify tables were created
     const tablesResult = await query(`

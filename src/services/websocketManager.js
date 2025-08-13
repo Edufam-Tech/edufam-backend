@@ -18,9 +18,22 @@ class WebSocketManager {
    * Initialize WebSocket server
    */
   initialize(server) {
+    const defaultOrigins = [
+      'http://localhost:3000',
+      'http://localhost:5173',
+      'http://127.0.0.1:5173',
+      'http://127.0.0.1:3000',
+    ];
+    const envOrigin = process.env.FRONTEND_URL;
+    const allowedOrigins = Array.isArray(envOrigin)
+      ? envOrigin
+      : envOrigin
+      ? [envOrigin, ...defaultOrigins]
+      : defaultOrigins;
+
     this.io = new Server(server, {
       cors: {
-        origin: process.env.FRONTEND_URL || ["http://localhost:3000"],
+        origin: allowedOrigins,
         credentials: true
       },
       pingTimeout: 60000,

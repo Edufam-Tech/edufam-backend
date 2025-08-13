@@ -253,6 +253,35 @@ class FeeController {
     }
   }
 
+  // List all fee assignments with basic filters to satisfy frontend
+  static async getFeeAssignments(req, res) {
+    try {
+      const { status, assignment_type, academic_year, page = 1, limit = 20 } = req.query;
+      const params = [req.user.school_id];
+      let where = 'WHERE school_id = $1';
+      let idx = 2;
+      if (status) { where += ` AND status = $${idx++}`; params.push(status); }
+      if (assignment_type) { where += ` AND assignment_type = $${idx++}`; params.push(assignment_type); }
+      if (academic_year) { where += ` AND academic_year = $${idx++}`; params.push(academic_year); }
+      const offset = (parseInt(page, 10) - 1) * parseInt(limit, 10);
+      const sql = `
+        SELECT id, assignment_name, assignment_code, assignment_type, curriculum_type,
+               academic_year, academic_term, total_amount, status, execution_status,
+               created_by, created_at, approved_by, approved_at
+        FROM fee_assignments
+        ${where}
+        ORDER BY created_at DESC
+        LIMIT $${idx} OFFSET $${idx + 1}
+      `;
+      params.push(parseInt(limit, 10), offset);
+      const result = await query(sql, params);
+      res.json({ success: true, data: result.rows });
+    } catch (error) {
+      console.error('Get fee assignments error:', error);
+      res.status(500).json({ success: false, message: 'Failed to get fee assignments' });
+    }
+  }
+
   static async approveAssignment(req, res) {
     try {
       const { id } = req.params;
@@ -992,19 +1021,101 @@ class FeeController {
   }
 
   static async getFeeTemplates(req, res) {
-    res.status(200).json({ success: true, message: 'Get fee templates - implementation pending', data: [] });
+    try {
+      const { query } = require('../config/database');
+      const { curriculumType, gradeLevel, active } = req.query;
+      let where = 'WHERE school_id = $1';
+      const params = [req.user.school_id];
+      let idx = 2;
+      if (curriculumType) { where += ` AND curriculum_type = $${idx++}`; params.push(curriculumType); }
+      if (gradeLevel) { where += ` AND grade_level = $${idx++}`; params.push(gradeLevel); }
+      if (typeof active !== 'undefined') { where += ` AND is_active = $${idx++}`; params.push(active === 'true'); }
+      const sql = `
+        SELECT id, name, curriculum_type, grade_level, fees, is_active, created_at, updated_at
+        FROM fee_templates
+        ${where}
+        ORDER BY created_at DESC
+      `;
+      const result = await query(sql, params);
+      res.json({ success: true, data: result.rows });
+    } catch (error) {
+      console.error('Get fee templates error:', error);
+      res.status(500).json({ success: false, message: 'Failed to get fee templates' });
+    }
   }
 
   static async createFeeTemplate(req, res) {
-    res.status(201).json({ success: true, message: 'Create fee template - implementation pending', data: {} });
+    try {
+      const { query } = require('../config/database');
+      const { name, curriculumType, gradeLevel, fees, isActive } = req.body;
+      if (!name || !curriculumType || !gradeLevel || !Array.isArray(fees)) {
+        return res.status(400).json({ success: false, message: 'name, curriculumType, gradeLevel, and fees[] are required' });
+      }
+      const sql = `
+        INSERT INTO fee_templates (name, curriculum_type, grade_level, fees, is_active, school_id, created_by, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+        RETURNING id, name, curriculum_type, grade_level, fees, is_active, created_at
+      `;
+      const result = await query(sql, [
+        name, curriculumType, gradeLevel, JSON.stringify(fees), !!isActive, req.user.school_id, req.user.id,
+      ]);
+      res.status(201).json({ success: true, message: 'Fee template created successfully', data: result.rows[0] });
+    } catch (error) {
+      console.error('Create fee template error:', error);
+      res.status(500).json({ success: false, message: 'Failed to create fee template' });
+    }
   }
 
   static async getTemplatesByCurriculum(req, res) {
-    res.status(200).json({ success: true, message: 'Get templates by curriculum - implementation pending', data: [] });
+    try {
+      const { query } = require('../config/database');
+      const { curriculumType } = req.params;
+      const { gradeLevel } = req.query;
+      if (!curriculumType) {
+        return res.status(400).json({ success: false, message: 'curriculumType is required' });
+      }
+      let where = 'WHERE school_id = $1 AND curriculum_type = $2';
+      const params = [req.user.school_id, curriculumType];
+      if (gradeLevel) { where += ' AND grade_level = $3'; params.push(gradeLevel); }
+      const sql = `
+        SELECT id, name, curriculum_type, grade_level, fees, is_active, created_at, updated_at
+        FROM fee_templates
+        ${where}
+        ORDER BY grade_level, name
+      `;
+      const result = await query(sql, params);
+      res.json({ success: true, data: result.rows });
+    } catch (error) {
+      console.error('Get templates by curriculum error:', error);
+      res.status(500).json({ success: false, message: 'Failed to get templates by curriculum' });
+    }
   }
 
   static async duplicateTemplate(req, res) {
-    res.status(201).json({ success: true, message: 'Duplicate template - implementation pending', data: {} });
+    try {
+      const { query } = require('../config/database');
+      const { templateId, newName } = req.body;
+      if (!templateId || !newName) {
+        return res.status(400).json({ success: false, message: 'templateId and newName are required' });
+      }
+      const src = await query(
+        'SELECT * FROM fee_templates WHERE id = $1 AND school_id = $2',
+        [templateId, req.user.school_id]
+      );
+      if (src.rows.length === 0) {
+        return res.status(404).json({ success: false, message: 'Source template not found' });
+      }
+      const t = src.rows[0];
+      const ins = await query(
+        `INSERT INTO fee_templates (name, curriculum_type, grade_level, fees, is_active, school_id, created_by, created_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,NOW()) RETURNING id, name, curriculum_type, grade_level, fees, is_active, created_at`,
+        [newName, t.curriculum_type, t.grade_level, t.fees, t.is_active, t.school_id, req.user.id]
+      );
+      res.status(201).json({ success: true, message: 'Template duplicated successfully', data: ins.rows[0] });
+    } catch (error) {
+      console.error('Duplicate fee template error:', error);
+      res.status(500).json({ success: false, message: 'Failed to duplicate fee template' });
+    }
   }
 
   static async bulkAssignFeesByClass(req, res) {

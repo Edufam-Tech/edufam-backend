@@ -14,13 +14,24 @@ const securityHeaders = helmet({
           fontSrc: ["'self'", "https://fonts.gstatic.com"],
           imgSrc: ["'self'", "data:", "https:"],
           scriptSrc: ["'self'"],
-          connectSrc: ["'self'"],
+          connectSrc: ["'self'", 'wss:', 'ws:'],
           frameSrc: ["'none'"],
           objectSrc: ["'none'"],
           upgradeInsecureRequests: [],
         },
       }
-    : false,
+    : {
+        directives: {
+          defaultSrc: ["'self'"],
+          styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+          fontSrc: ["'self'", "https://fonts.gstatic.com"],
+          imgSrc: ["'self'", "data:", "https:"],
+          scriptSrc: ["'self'", "'unsafe-eval'"],
+          connectSrc: ["'self'", 'wss:', 'ws:'],
+          frameSrc: ["'none'"],
+          objectSrc: ["'none'"],
+        },
+      },
   crossOriginEmbedderPolicy: false,
   hsts: isProduction
     ? {
@@ -157,11 +168,14 @@ const sanitizeInput = (req, res, next) => {
     
     for (const key in obj) {
       if (typeof obj[key] === 'string') {
-        // Basic XSS prevention
+        // Enhanced XSS prevention
         obj[key] = obj[key]
           .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
           .replace(/<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi, '')
+          .replace(/<object\b[^<]*(?:(?!<\/object>)<[^<]*)*<\/object>/gi, '')
+          .replace(/<embed\b[^<]*(?:(?!<\/embed>)<[^<]*)*<\/embed>/gi, '')
           .replace(/javascript:/gi, '')
+          .replace(/data:\s*text\/html/gi, '')
           .replace(/on\w+\s*=/gi, '');
       } else if (typeof obj[key] === 'object') {
         sanitizeObject(obj[key]);

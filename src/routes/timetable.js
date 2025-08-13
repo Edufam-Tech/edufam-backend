@@ -2,6 +2,8 @@ const express = require('express');
 const router = express.Router();
 const { authenticate, requireRole, requireUserType } = require('../middleware/auth');
 const TimetableController = require('../controllers/timetableController');
+const { query } = require('../config/database');
+const { ValidationError } = require('../middleware/errorHandler');
 
 // Apply authentication to all routes
 router.use(authenticate);
@@ -117,6 +119,52 @@ router.get('/conflicts',
  */
 router.get('/published',
   TimetableController.getPublishedTimetable
+);
+
+/**
+ * @route   GET /api/timetable/today
+ * @desc    Get today's timetable for the authenticated user
+ * @access  Private (All school users)
+ */
+router.get('/today',
+  async (req, res, next) => {
+    try {
+      const dayOfWeek = new Intl.DateTimeFormat('en-US', { weekday: 'long' }).format(new Date()).toLowerCase();
+      const role = req.user.role;
+      const userId = req.user.userId;
+      const schoolId = req.user.schoolId;
+
+      let result;
+      if (role === 'teacher' || role === 'head_teacher') {
+        result = await query(`
+          SELECT te.*
+          FROM timetable_entries te
+          WHERE te.school_id = $1 AND te.teacher_id = $2 AND te.day_of_week = $3
+          ORDER BY te.period_number
+        `, [schoolId, userId, dayOfWeek]);
+      } else if (role === 'parent') {
+        // Return entries for all classes of the parent's children
+        result = await query(`
+          SELECT te.*
+          FROM timetable_entries te
+          JOIN students s ON te.class_id = s.class_id
+          JOIN parent_students ps ON ps.student_id = s.id
+          WHERE te.school_id = $1 AND ps.parent_id = $2 AND te.day_of_week = $3
+          ORDER BY te.class_id, te.period_number
+        `, [schoolId, userId, dayOfWeek]);
+      } else {
+        // Generic: return school timetable for today
+        result = await query(`
+          SELECT te.*
+          FROM timetable_entries te
+          WHERE te.school_id = $1 AND te.day_of_week = $2
+          ORDER BY te.class_id, te.period_number
+        `, [schoolId, dayOfWeek]);
+      }
+
+      res.json({ success: true, data: result.rows });
+    } catch (error) { next(error); }
+  }
 );
 
 /**
@@ -522,7 +570,5 @@ router.get('/suggestions',
 // =============================================================================
 
 // Import required modules for inline functions
-const { query } = require('../config/database');
-const { ValidationError } = require('../middleware/errorHandler');
 
 module.exports = router;

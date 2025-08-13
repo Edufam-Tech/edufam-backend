@@ -7,6 +7,7 @@ const FeeController = require('../controllers/feeController');
 const PaymentController = require('../controllers/paymentController');
 const MpesaController = require('../controllers/mpesaController');
 const InvoiceController = require('../controllers/invoiceController');
+const { query } = require('../config/database');
 
 // Fee Structure Routes
 router.post('/fee-structures', 
@@ -42,6 +43,12 @@ router.post('/fee-assignments',
   authenticate, 
   requireRole(['finance', 'principal', 'school_director']), 
   FeeController.assignFees
+);
+
+// List fee assignments (frontend expects GET /financial/fee-assignments)
+router.get('/fee-assignments',
+  authenticate,
+  FeeController.getFeeAssignments
 );
 
 router.get('/fee-assignments/pending', 
@@ -473,6 +480,34 @@ router.get('/financial/outstanding-fees',
   PaymentController.getOutstandingFees
 );
 
+// Mobile convenience: get fee assignments for a specific student
+router.get('/fee-assignments/student/:id',
+  authenticate,
+  async (req, res, next) => {
+    try {
+      const studentId = req.params.id;
+      const schoolId = req.user.schoolId;
+      const result = await query(`
+        SELECT 
+          fa.id,
+          fa.student_id,
+          fa.fee_structure_id,
+          fa.amount,
+          COALESCE(fa.amount_paid, 0) as amount_paid,
+          fa.due_date,
+          fs.name as fee_name,
+          fs.term,
+          fs.academic_year_id
+        FROM fee_assignments fa
+        JOIN fee_structures fs ON fa.fee_structure_id = fs.id
+        WHERE fa.student_id = $1 AND fs.school_id = $2
+        ORDER BY fa.due_date DESC NULLS LAST
+      `, [studentId, schoolId]);
+      res.json({ success: true, data: result.rows });
+    } catch (error) { next(error); }
+  }
+);
+
 // Export and Report Routes
 router.get('/reports/fee-statement/:studentId', 
   authenticate, 
@@ -529,6 +564,13 @@ router.get('/fee-assignments/analytics',
 router.get('/fees/templates', 
   authenticate, 
   FeeController.getFeeTemplates
+);
+
+// Align with frontend expectations for fee-assignments submit-for-approval
+router.post('/fee-assignments/submit-for-approval', 
+  authenticate, 
+  requireRole(['finance']), 
+  FeeController.submitAssignmentForApproval
 );
 
 router.post('/fees/templates', 

@@ -13,11 +13,15 @@ class UserService {
   async findUserByEmail(email, userType = null) {
     try {
       let sql = `
-        SELECT id, email, password_hash, role, user_type, school_id, 
-               first_name, last_name, is_active, activation_status, 
-               failed_login_attempts, locked_until, profile_picture_url
-        FROM users 
-        WHERE email = $1
+        SELECT 
+          u.id, u.email, u.password_hash, u.role, u.user_type, u.school_id,
+          u.first_name, u.last_name, u.is_active, u.activation_status,
+          u.failed_login_attempts, u.locked_until, u.profile_picture_url,
+          u.phone, u.last_login,
+          s.name AS school_name
+        FROM users u
+        LEFT JOIN schools s ON u.school_id = s.id
+        WHERE u.email = $1
       `;
       
       const params = [email.toLowerCase()];
@@ -352,14 +356,22 @@ class UserService {
 
   // Sanitize user data for API responses
   sanitizeUser(user) {
-    const {
-      password_hash,
-      failed_login_attempts,
-      locked_until,
-      ...sanitizedUser
-    } = user;
-    
-    return sanitizedUser;
+    // Map database fields to camelCase API response and drop sensitive fields
+    return {
+      id: user.id,
+      email: user.email,
+      firstName: user.first_name,
+      lastName: user.last_name,
+      role: user.role,
+      userType: user.user_type,
+      schoolId: user.school_id,
+      schoolName: user.school_name || null,
+      permissions: user.permissions || [],
+      profileImage: user.profile_picture_url || null,
+      phoneNumber: user.phone || null,
+      isActive: user.is_active,
+      lastLogin: user.last_login || null
+    };
   }
 }
 

@@ -91,8 +91,15 @@ router.get('/verify-reset-token/:token',
 );
 
 // Protected authentication routes (authentication required)
+// Note: Authenticate if token exists; allow refresh-token-only logout without 401
 router.post('/logout',
-  authenticate,
+  (req, res, next) => {
+    // If Authorization header exists, run authenticate; else continue to controller
+    if (req.headers && req.headers.authorization) {
+      return authenticate(req, res, next);
+    }
+    next();
+  },
   authController.logout
 );
 

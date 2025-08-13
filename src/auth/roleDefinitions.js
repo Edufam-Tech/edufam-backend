@@ -190,6 +190,17 @@ const SCHOOL_USER_ROLES = {
 const ADMIN_USER_ROLES = {
   // Users with DASHBOARD ACCESS ONLY
   DASHBOARD_USERS: {
+      EDUFAM_ADMIN: {
+        role: 'edufam_admin',
+        name: 'Edufam Admin',
+        description: 'Internal platform administration',
+        dashboardAccess: true,
+        permissions: [
+          'manage:all_schools', 'manage:all_users', 'manage:system_settings',
+          'manage:security', 'manage:platform_finance', 'manage:analytics',
+          'manage:compliance', 'manage:backups', 'full:system_access'
+        ]
+      },
     SUPER_ADMIN: {
       role: 'super_admin',
       name: 'Super Admin',
@@ -454,6 +465,7 @@ module.exports = {
   
   ADMIN_DASHBOARD_ROLES: [
     'super_admin',
+    'edufam_admin',
     'support_hr',
     'sales_marketing',
     'engineer',

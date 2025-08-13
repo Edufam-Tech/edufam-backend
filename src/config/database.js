@@ -1,23 +1,25 @@
 const { Pool } = require('pg');
 require('dotenv').config();
 
-// Updated database configuration with longer timeouts
+// Updated database configuration with longer timeouts and safer defaults
 const dbConfig = {
   connectionString: process.env.DATABASE_URL,
   ssl: {
     rejectUnauthorized: false
   },
-  // Increased timeouts for network issues
-  max: 5, // Reduced max connections
-  min: 0, // No minimum connections
-  idleTimeoutMillis: 60000, // 60 seconds
-  connectionTimeoutMillis: 30000, // 30 seconds (increased)
-  acquireTimeoutMillis: 90000, // 90 seconds (increased)
-  
-  // Additional network settings
+  // Optimized for Render/free-tier style environments
+  max: parseInt(process.env.DB_POOL_MAX || '3', 10),
+  min: parseInt(process.env.DB_POOL_MIN || '1', 10),
+  idleTimeoutMillis: 30000, // 30 seconds
+  connectionTimeoutMillis: 60000, // 60 seconds
+  acquireTimeoutMillis: 60000, // 60 seconds
+
+  // Additional network and safety settings
   application_name: 'edufam-backend',
   keepAlive: true,
-  keepAliveInitialDelayMillis: 10000,
+  keepAliveInitialDelayMillis: 5000,
+  statement_timeout: 30000, // 30s statement timeout
+  query_timeout: 30000
 };
 
 // Create connection pool
@@ -62,6 +64,23 @@ const testConnection = async () => {
       client.release();
     }
   }
+};
+
+// Connection retry helper (for cold starts / intermittent failures)
+const connectWithRetry = async (retries = 3) => {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const client = await pool.connect();
+      client.release();
+      return true;
+    } catch (error) {
+      console.log(`Connection attempt ${attempt} failed:`, error.message);
+      if (attempt === retries) throw error;
+      // Exponential backoff: 1s, 2s, 3s ...
+      await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+    }
+  }
+  return false;
 };
 
 // Rest of your code stays the same...
@@ -113,6 +132,7 @@ process.on('SIGTERM', async () => {
 module.exports = {
   pool,
   testConnection,
+  connectWithRetry,
   getClient,
   query,
   closePool

@@ -10,6 +10,20 @@ router.use(authenticate);
 // EXPENSE REQUEST MANAGEMENT
 // =============================================================================
 
+// Aliases to match frontend expectations
+// GET /api/expenses → list expense requests
+router.get('/',
+  authenticate,
+  ExpenseController.getExpenseRequests
+);
+
+// POST /api/expenses → create expense request
+router.post('/',
+  authenticate,
+  requireRole(['finance', 'principal', 'school_director', 'hr']),
+  ExpenseController.createExpenseRequest
+);
+
 // Get expense requests
 router.get('/requests', 
   authenticate, 

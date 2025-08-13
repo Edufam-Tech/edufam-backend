@@ -14,6 +14,18 @@ const ensureUploadDirectory = () => {
   return uploadDir;
 };
 
+// Simple file signature verification for basic types
+const verifyFileSignature = (buffer, mimetype) => {
+  const signatures = {
+    'image/jpeg': [0xFF, 0xD8, 0xFF],
+    'image/png': [0x89, 0x50, 0x4E, 0x47],
+    'application/pdf': [0x25, 0x50, 0x44, 0x46]
+  };
+  const signature = signatures[mimetype];
+  if (!signature) return true; // If unknown, don't block here; rely on mimetype allowlist
+  return signature.every((byte, index) => buffer[index] === byte);
+};
+
 // File filter function
 const fileFilter = (req, file, cb) => {
   // Allowed file types
@@ -27,11 +39,20 @@ const fileFilter = (req, file, cb) => {
     'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx'
   };
   
-  if (allowedTypes[file.mimetype]) {
-    cb(null, true);
-  } else {
+  if (!allowedTypes[file.mimetype]) {
     cb(new ValidationError(`File type ${file.mimetype} is not allowed`), false);
+    return;
   }
+
+  // Basic signature check for files that provide a buffer (memory storage or multer exposes buffer)
+  if (file.buffer) {
+    const head = file.buffer.slice(0, 10);
+    if (!verifyFileSignature(head, file.mimetype)) {
+      return cb(new ValidationError('File signature does not match declared type'), false);
+    }
+  }
+
+  cb(null, true);
 };
 
 // Storage configuration

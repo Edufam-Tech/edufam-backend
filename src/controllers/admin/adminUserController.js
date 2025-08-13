@@ -29,7 +29,7 @@ class AdminUserController {
       }
 
       // Validate role
-      const validRoles = ['super_admin', 'regional_admin', 'support_admin', 'finance_admin', 'compliance_admin'];
+      const validRoles = ['super_admin', 'regional_admin', 'support_admin', 'admin_finance', 'compliance_admin'];
       if (!validRoles.includes(role)) {
         throw new ValidationError(`Role must be one of: ${validRoles.join(', ')}`);
       }
@@ -561,7 +561,7 @@ class AdminUserController {
             'analytics.basic', 'system.monitoring'
           ]
         },
-        finance_admin: {
+        admin_finance: {
           name: 'Finance Administrator',
           description: 'Manage billing, subscriptions, and financial operations',
           permissions: [

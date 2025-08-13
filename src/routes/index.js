@@ -44,6 +44,13 @@ const payrollRoutes = require('./payroll');
 const performanceRoutes = require('./performance');
 const inventoryRoutes = require('./inventory');
 const aiTimetableRoutes = require('./ai-timetable');
+// Web dashboard routes
+const directorWebRoutes = require('./web/directorRoutes');
+const principalWebRoutes = require('./web/principalRoutes');
+const teacherWebRoutes = require('./web/teacherRoutes');
+const hrWebRoutes = require('./web/hrRoutes');
+const financeWebRoutes = require('./web/financeRoutes');
+const parentWebRoutes = require('./web/parentRoutes');
 
 // Admin routes
 const multiSchoolRoutes = require('./admin/multiSchool');
@@ -229,11 +236,11 @@ router.get('/public/job-postings', async (req, res) => {
     });
   } catch (error) {
     console.error('Error fetching public job postings:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to fetch job postings',
-      message: error.message
-    });
+    if (error.code === '42P01') {
+      // Table missing – return empty list instead of 500
+      return res.status(200).json({ success: true, data: [], message: 'No job postings available yet' });
+    }
+    res.status(500).json({ success: false, error: 'Failed to fetch job postings', message: error.message });
   }
 });
 
@@ -311,7 +318,17 @@ router.use('/i18n', schoolAuth, i18nRoutes);
 router.use('/cloud', schoolAuth, cloudRoutes);
 
 // Mobile application routes (only for dashboard users)
-router.use('/mobile', schoolAuth, mobileRoutes);
+// Allow parent users access to mobile routes alongside school users
+const { authenticate } = require('../middleware/auth');
+router.use('/mobile', authenticate, mobileRoutes);
+
+// Web dashboard routes (role-guarded inside the router)
+router.use('/web/director', directorWebRoutes);
+router.use('/web/principal', principalWebRoutes);
+router.use('/web/teacher', teacherWebRoutes);
+router.use('/web/hr', hrWebRoutes);
+router.use('/web/finance', financeWebRoutes);
+router.use('/web/parent', parentWebRoutes);
 
 /**
  * ===========================

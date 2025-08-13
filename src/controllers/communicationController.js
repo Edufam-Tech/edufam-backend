@@ -2,13 +2,143 @@ const { ValidationError, NotFoundError, ConflictError, DatabaseError } = require
 const { query } = require('../config/database');
 
 class CommunicationController {
+  // Conversations API (threads)
+  static async getConversations(req, res, next) {
+    try {
+      const result = await query(`
+        SELECT mt.id, mt.title, mt.type, mt.created_at,
+               ARRAY_AGG(u.first_name || ' ' || u.last_name ORDER BY u.first_name) AS participants
+        FROM message_threads mt
+        JOIN thread_participants tp ON mt.id = tp.thread_id
+        JOIN users u ON tp.user_id = u.id
+        WHERE mt.school_id = $1 AND tp.user_id = $2 AND (tp.left_at IS NULL)
+        GROUP BY mt.id
+        ORDER BY mt.updated_at DESC NULLS LAST, mt.created_at DESC
+        LIMIT 50
+      `, [req.user.schoolId, req.user.userId]);
+      res.json({ success: true, data: result.rows });
+    } catch (error) {
+      if (error && (error.code === '42P01' || error.code === '42501')) {
+        return res.json({ success: true, data: [] });
+      }
+      next(error);
+    }
+  }
+
+  static async createConversation(req, res, next) {
+    try {
+      const { title, type = 'direct', participantIds = [] } = req.body || {};
+      if (!Array.isArray(participantIds) || participantIds.length === 0) {
+        throw new ValidationError('participantIds array is required');
+      }
+      const thread = await query(`
+        INSERT INTO message_threads (school_id, title, type, created_by)
+        VALUES ($1, $2, $3, $4) RETURNING *
+      `, [req.user.schoolId, title || null, type, req.user.userId]);
+      const threadId = thread.rows[0].id;
+      const allParticipants = Array.from(new Set([req.user.userId, ...participantIds]));
+      for (const uid of allParticipants) {
+        // eslint-disable-next-line no-await-in-loop
+        await query(`
+          INSERT INTO thread_participants (thread_id, user_id, role)
+          VALUES ($1, $2, 'member')
+          ON CONFLICT (thread_id, user_id) DO NOTHING
+        `, [threadId, uid]);
+      }
+      res.status(201).json({ success: true, data: thread.rows[0] });
+    } catch (error) { next(error); }
+  }
+
+  static async getConversationDetails(req, res, next) {
+    try {
+      const { conversationId } = req.params;
+      const thread = await query(`
+        SELECT * FROM message_threads WHERE id = $1 AND school_id = $2
+      `, [conversationId, req.user.schoolId]);
+      if (thread.rows.length === 0) return res.status(404).json({ success: false, error: { message: 'Conversation not found' } });
+      const participants = await query(`
+        SELECT u.id, u.first_name, u.last_name
+        FROM thread_participants tp JOIN users u ON tp.user_id = u.id
+        WHERE tp.thread_id = $1 AND (tp.left_at IS NULL)
+        ORDER BY u.first_name
+      `, [conversationId]);
+      res.json({ success: true, data: { conversation: thread.rows[0], participants: participants.rows } });
+    } catch (error) { next(error); }
+  }
+
+  static async sendThreadMessage(req, res, next) {
+    try {
+      const { conversationId } = req.params;
+      const { content, title } = req.body || {};
+      if (!content) throw new ValidationError('content is required');
+      const inserted = await query(`
+        INSERT INTO messages (school_id, sender_id, title, content, type, thread_id)
+        VALUES ($1, $2, $3, $4, 'message', $5) RETURNING *
+      `, [req.user.schoolId, req.user.userId, title || null, content, conversationId]);
+      // ensure all thread participants become recipients for tracking
+      const participants = await query(`SELECT user_id FROM thread_participants WHERE thread_id = $1 AND (left_at IS NULL)`, [conversationId]);
+      for (const row of participants.rows) {
+        // eslint-disable-next-line no-await-in-loop
+        await query(`
+          INSERT INTO message_recipients (message_id, recipient_id, recipient_type, status)
+          VALUES ($1, $2, 'user', 'delivered')
+          ON CONFLICT (message_id, recipient_id) DO NOTHING
+        `, [inserted.rows[0].id, row.user_id]);
+      }
+      res.status(201).json({ success: true, data: inserted.rows[0] });
+    } catch (error) { next(error); }
+  }
+
+  static async addParticipant(req, res, next) {
+    try {
+      const { conversationId } = req.params;
+      const { userId } = req.body || {};
+      if (!userId) throw new ValidationError('userId is required');
+      await query(`
+        INSERT INTO thread_participants (thread_id, user_id, role)
+        VALUES ($1, $2, 'member') ON CONFLICT (thread_id, user_id) DO NOTHING
+      `, [conversationId, userId]);
+      res.json({ success: true, message: 'Participant added' });
+    } catch (error) { next(error); }
+  }
+
+  static async removeParticipant(req, res, next) {
+    try {
+      const { conversationId, userId } = req.params;
+      await query(`
+        UPDATE thread_participants SET left_at = NOW() WHERE thread_id = $1 AND user_id = $2
+      `, [conversationId, userId]);
+      res.json({ success: true, message: 'Participant removed' });
+    } catch (error) { next(error); }
+  }
+
+  static async getConversationHistory(req, res, next) {
+    try {
+      const { conversationId } = req.params;
+      const result = await query(`
+        SELECT m.id, m.title, m.content, m.type, m.created_at, m.sender_id,
+               u.first_name, u.last_name
+        FROM messages m
+        JOIN users u ON m.sender_id = u.id
+        WHERE m.thread_id = $1
+        ORDER BY m.created_at DESC
+        LIMIT 200
+      `, [conversationId]);
+      res.json({ success: true, data: result.rows });
+    } catch (error) {
+      if (error && (error.code === '42P01' || error.code === '42501')) {
+        return res.json({ success: true, data: [] });
+      }
+      next(error);
+    }
+  }
   // Send message/notification
   static async sendMessage(req, res, next) {
     try {
       const messageData = {
         ...req.body,
-        senderId: req.user.id,
-        schoolId: req.user.school_id
+        senderId: req.user.userId,
+        schoolId: req.user.schoolId
       };
 
       // Validate required fields
@@ -100,7 +230,7 @@ class CommunicationController {
           JOIN users u ON m.sender_id = u.id
           WHERE mr.recipient_id = $1
         `;
-        params = [req.user.id];
+        params = [req.user.userId];
       } else {
         sql = `
           SELECT 
@@ -113,7 +243,7 @@ class CommunicationController {
           WHERE m.sender_id = $1
           GROUP BY m.id
         `;
-        params = [req.user.id];
+        params = [req.user.userId];
       }
 
       // Apply filters
@@ -219,12 +349,12 @@ class CommunicationController {
       message.recipients = recipientsResult.rows;
 
       // Mark as read if user is recipient
-      if (message.recipients.some(r => r.recipient_id === req.user.id)) {
+      if (message.recipients.some(r => r.recipient_id === req.user.userId)) {
         await query(`
           UPDATE message_recipients 
           SET read_at = NOW() 
           WHERE message_id = $1 AND recipient_id = $2 AND read_at IS NULL
-        `, [id, req.user.id]);
+        `, [id, req.user.userId]);
       }
 
       res.json({
@@ -248,7 +378,7 @@ class CommunicationController {
         UPDATE message_recipients 
         SET read_at = ${readAt}
         WHERE message_id = $1 AND recipient_id = $2
-      `, [id, req.user.id]);
+      `, [id, req.user.userId]);
 
       res.json({
         success: true,
@@ -276,7 +406,7 @@ class CommunicationController {
         throw new NotFoundError('Message not found or access denied');
       }
 
-      const isSender = checkResult.rows.some(row => row.sender_id === req.user.id);
+      const isSender = checkResult.rows.some(row => row.sender_id === req.user.userId);
 
       if (isSender) {
         // Delete entire message if sender
@@ -286,7 +416,7 @@ class CommunicationController {
         await query(`
           DELETE FROM message_recipients 
           WHERE message_id = $1 AND recipient_id = $2
-        `, [id, req.user.id]);
+        `, [id, req.user.userId]);
       }
 
       res.json({
@@ -303,8 +433,8 @@ class CommunicationController {
     try {
       const announcementData = {
         ...req.body,
-        schoolId: req.user.school_id,
-        createdBy: req.user.id
+        schoolId: req.user.schoolId,
+        createdBy: req.user.userId
       };
 
       // Validate required fields
@@ -365,7 +495,7 @@ class CommunicationController {
         WHERE a.school_id = $1
       `;
       
-      const params = [req.user.school_id];
+      const params = [req.user.schoolId];
       let paramCount = 1;
 
       // Apply filters
@@ -447,7 +577,7 @@ class CommunicationController {
         updateData.priority,
         updateData.isUrgent,
         updateData.expiresAt,
-        req.user.school_id
+        req.user.schoolId
       ]);
 
       if (result.rows.length === 0) {
@@ -473,7 +603,7 @@ class CommunicationController {
         DELETE FROM announcements 
         WHERE id = $1 AND school_id = $2
         RETURNING id
-      `, [id, req.user.school_id]);
+      `, [id, req.user.schoolId]);
 
       if (result.rows.length === 0) {
         throw new NotFoundError('Announcement not found');
@@ -493,8 +623,8 @@ class CommunicationController {
     try {
       const notificationData = {
         ...req.body,
-        schoolId: req.user.school_id,
-        createdBy: req.user.id
+        schoolId: req.user.schoolId,
+        createdBy: req.user.userId
       };
 
       // Validate required fields
@@ -568,7 +698,7 @@ class CommunicationController {
         WHERE nr.recipient_id = $1
       `;
       
-      const params = [req.user.id];
+      const params = [req.user.userId];
       let paramCount = 1;
 
       // Apply filters
@@ -631,7 +761,7 @@ class CommunicationController {
         UPDATE notification_recipients 
         SET read_at = NOW() 
         WHERE notification_id = $1 AND recipient_id = $2
-      `, [id, req.user.id]);
+      `, [id, req.user.userId]);
 
       res.json({
         success: true,
@@ -648,7 +778,7 @@ class CommunicationController {
       const result = await query(`
         SELECT * FROM communication_settings 
         WHERE school_id = $1
-      `, [req.user.school_id]);
+      `, [req.user.schoolId]);
 
       const settings = result.rows[0] || {};
 
@@ -681,7 +811,7 @@ class CommunicationController {
           updated_at = NOW()
         RETURNING *
       `, [
-        req.user.school_id,
+        req.user.schoolId,
         updateData.emailNotifications || true,
         updateData.smsNotifications || false,
         updateData.pushNotifications || true,

@@ -17,7 +17,7 @@ router.use(requireUserType('platform_admin'));
  * @access  Private (Platform Admin)
  */
 router.get('/overview',
-  requireRole(['super_admin', 'regional_admin', 'finance_admin']),
+  requireRole(['super_admin', 'regional_admin', 'admin_finance']),
   PlatformAnalyticsController.getPlatformOverview
 );
 
@@ -27,7 +27,7 @@ router.get('/overview',
  * @access  Private (Platform Admin)
  */
 router.get('/growth',
-  requireRole(['super_admin', 'regional_admin', 'finance_admin']),
+  requireRole(['super_admin', 'regional_admin', 'admin_finance']),
   PlatformAnalyticsController.getGrowthAnalytics
 );
 
@@ -65,7 +65,7 @@ router.get('/feature-adoption',
  * @access  Private (Super Admin, Finance Admin)
  */
 router.get('/revenue',
-  requireRole(['super_admin', 'finance_admin']),
+  requireRole(['super_admin', 'admin_finance']),
   PlatformAnalyticsController.getRevenueAnalytics
 );
 
@@ -75,7 +75,7 @@ router.get('/revenue',
  * @access  Private (Super Admin, Finance Admin)
  */
 router.get('/revenue/summary',
-  requireRole(['super_admin', 'finance_admin']),
+  requireRole(['super_admin', 'admin_finance']),
   async (req, res, next) => {
     try {
       const { query } = require('../../config/database');
@@ -282,7 +282,7 @@ router.get('/regions/:regionId',
  * @access  Private (Platform Admin)
  */
 router.get('/compare',
-  requireRole(['super_admin', 'regional_admin', 'finance_admin']),
+  requireRole(['super_admin', 'regional_admin', 'admin_finance']),
   PlatformAnalyticsController.getComparativeAnalytics
 );
 
@@ -520,7 +520,7 @@ router.get('/alerts',
  * @access  Private (Platform Admin)
  */
 router.post('/export',
-  requireRole(['super_admin', 'regional_admin', 'finance_admin']),
+  requireRole(['super_admin', 'regional_admin', 'admin_finance']),
   async (req, res, next) => {
     try {
       const {

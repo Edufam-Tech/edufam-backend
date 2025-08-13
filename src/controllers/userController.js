@@ -432,6 +432,54 @@ class UserController {
       data: stats
     });
   });
+
+  // Capabilities endpoint for platform access strategy
+  getCapabilities = asyncHandler(async (req, res) => {
+    const { role, userType, schoolId } = req.user;
+
+    // Multi-school access only for directors
+    const multiSchoolAccess = role === 'school_director';
+
+    // Platform tiers
+    const platforms = {
+      web: 'full',
+      mobile: role === 'parent' ? 'full' : 'essential'
+    };
+
+    // Web features (high-level; frontends use to toggle menus)
+    const webFeaturesByRole = {
+      school_director: ['dashboard','multi_school','approvals','financial','hr','reports','analytics','communications','calendar'],
+      principal: ['dashboard','academic','approvals','hr','reports','analytics','communications','calendar'],
+      teacher: ['dashboard','gradebook','attendance','timetable','reports','communications','calendar'],
+      hr: ['dashboard','staff','recruitment','leave','payroll','appraisals','reports','communications'],
+      finance: ['dashboard','fees','invoices','payments','mpesa','reports','analytics','communications'],
+      parent: ['dashboard','academic','payments','communications','calendar']
+    };
+
+    // Mobile features (lightweight set except for parents)
+    const mobileFeaturesByRole = {
+      school_director: ['dashboard','switch_school','announcements','messages','attendance_overview','approval_alerts','profile'],
+      principal: ['dashboard','announcements','messages','attendance_overview','grade_approval_alerts','profile'],
+      teacher: ['dashboard','messages','announcements','attendance_quick','schedule_overview','profile'],
+      hr: ['dashboard','messages','announcements','staff_attendance_overview','leave_alerts','profile'],
+      finance: ['dashboard','messages','announcements','payment_alerts','fee_balance_overview','profile'],
+      parent: ['home','messages','academic','marketplace','profile']
+    };
+
+    const response = {
+      role,
+      userType,
+      platforms,
+      webFeatures: webFeaturesByRole[role] || [],
+      mobileFeatures: mobileFeaturesByRole[role] || [],
+      multiSchoolAccess,
+      schoolContext: {
+        currentSchoolId: schoolId || null
+      }
+    };
+
+    res.json({ success: true, data: response });
+  });
 }
 
 module.exports = new UserController(); 

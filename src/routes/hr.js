@@ -37,6 +37,12 @@ router.get('/staff/all-categories',
   HRController.getAllStaffCategories
 );
 
+// Aliases to match frontend API map
+router.get('/staff/teaching', authenticate, requireRole(['hr','principal','school_director','admin']), HRController.getEmployees);
+router.get('/staff/administrative', authenticate, requireRole(['hr','principal','school_director','admin']), HRController.getEmployees);
+router.get('/staff/support', authenticate, requireRole(['hr','principal','school_director','admin']), HRController.getEmployees);
+router.get('/staff/specialized', authenticate, requireRole(['hr','principal','school_director','admin']), HRController.getEmployees);
+
 router.post('/staff/teaching', 
   authenticate, 
   requireRole(['hr', 'principal', 'school_director', 'admin']), 

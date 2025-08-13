@@ -13,6 +13,7 @@ const {
   SCHOOL_SUPPORT_STAFF_ROLES,
   ADMIN_DASHBOARD_ROLES
 } = require('../auth/roleDefinitions');
+const tokenBlacklist = require('../utils/tokenBlacklist');
 
 /**
  * CORRECTED AUTHENTICATION MIDDLEWARE
@@ -48,6 +49,11 @@ const authenticate = async (req, res, next) => {
       throw new AuthenticationError('Access token required');
     }
     
+    // Check if token has been revoked/blacklisted
+    if (await tokenBlacklist.isBlacklisted(token)) {
+      throw new AuthenticationError('Token revoked or invalidated');
+    }
+
     // Verify the token
     const decoded = authService.verifyAccessToken(token);
     
@@ -89,12 +95,17 @@ const authenticate = async (req, res, next) => {
       activationStatus: user.activation_status
     };
     
-    // Set user context for RLS
-    if (user.school_id) {
-      await query("SELECT set_config('app.current_school_id', $1, false)", [user.school_id]);
+    // Set user context for RLS (non-fatal on failure)
+    try {
+      if (user.school_id) {
+        await query("SELECT set_config('app.current_school_id', $1, false)", [user.school_id]);
+      }
+      await query("SELECT set_config('app.current_user_id', $1, false)", [user.id]);
+    } catch (rlsError) {
+      console.error('RLS configuration error:', rlsError);
+      // Continue without failing auth
     }
-    await query("SELECT set_config('app.current_user_id', $1, false)", [user.id]);
-    
+
     next();
     
   } catch (error) {
@@ -196,11 +207,32 @@ const authorize = (allowedRoles = [], options = {}) => {
   };
 };
 
+// Compatibility function for existing routes using requireUserType
+function requireUserType(allowedTypes) {
+  return (req, res, next) => {
+    const types = Array.isArray(allowedTypes) ? allowedTypes : [allowedTypes];
+
+    if (req.user && types.includes(req.user.userType)) {
+      return next();
+    }
+
+    return res.status(403).json({
+      success: false,
+      error: {
+        type: 'AuthorizationError',
+        message: `Access denied. Required user types: ${types.join(', ')}`
+      }
+    });
+  };
+}
+
 // Specific middleware for school application routes
 const schoolAuth = [
   authenticate,
   blockSupportStaffAccess(), // Block support staff from accessing any school APIs
-  requireDashboardAccess('school') // Only allow dashboard users
+  requireDashboardAccess('school'), // Only allow dashboard users
+  // Enforce userType to be school_user for school application routes
+  requireUserType('school_user')
 ];
 
 // Specific middleware for admin application routes  
@@ -374,25 +406,7 @@ const requireRole = (allowedRoles) => {
   return hasAnyRole(allowedRoles);
 };
 
-// Compatibility function for existing routes using requireUserType
-const requireUserType = (allowedTypes) => {
-  return (req, res, next) => {
-    // Ensure allowedTypes is an array
-    const types = Array.isArray(allowedTypes) ? allowedTypes : [allowedTypes];
-    
-    if (req.user && types.includes(req.user.userType)) {
-      return next();
-    }
-    
-    return res.status(403).json({
-      success: false,
-      error: {
-        type: 'AuthorizationError',
-        message: `Access denied. Required user types: ${types.join(', ')}`
-      }
-    });
-  };
-};
+// (moved above)
 
 // User management middleware (for admin and school director access)
 const requireUserManagement = (req, res, next) => {

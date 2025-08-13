@@ -75,6 +75,74 @@ router.delete('/schedules/:scheduleId',
   ExaminationController.deleteExaminationSchedule
 );
 
+// Aliases to satisfy frontend API map
+// GET /api/examinations/papers → map to question bank fetch
+router.get('/papers',
+  query('subject').optional().isString(),
+  query('gradeLevel').optional().isInt({ min: 1, max: 12 }),
+  (req, res, next) => {
+    // adapt query param names to controller expectations
+    req.query.subject_id = req.query.subject;
+    delete req.query.subject;
+    return ExaminationController.getQuestionBank(req, res, next);
+  }
+);
+
+// Approvals list stub aligning with frontend GET /api/examinations/approvals
+router.get('/approvals',
+  async (req, res, next) => {
+    try {
+      const { query } = require('../config/database');
+      const schoolId = req.user.school_id;
+      const result = await query(`
+        SELECT id, request_type as type, request_title as title, requested_by, approval_status as status, requested_at
+        FROM approval_requests
+        WHERE school_id = $1 AND request_type IN ('examination','exam_schedule','exam_results') AND approval_status = 'pending'
+        ORDER BY requested_at DESC
+        LIMIT 100
+      `, [schoolId]);
+      res.json({ success: true, data: result.rows });
+    } catch (error) { next(error); }
+  }
+);
+
+// Approve/reject examination-related approval requests
+router.put('/approvals/:id/approve',
+  async (req, res, next) => {
+    try {
+      const { query } = require('../config/database');
+      const id = req.params.id;
+      const userId = req.user.userId || req.user.id;
+      const result = await query(`
+        UPDATE approval_requests
+        SET approval_status = 'approved', final_approver_id = $1, final_approved_at = NOW(), updated_at = NOW()
+        WHERE id = $2 AND school_id = $3
+        RETURNING id, approval_status as status, final_approved_at
+      `, [userId, id, req.user.school_id || req.user.schoolId]);
+      if (result.rows.length === 0) return res.status(404).json({ success: false, message: 'Approval request not found' });
+      return res.json({ success: true, message: 'Approval request approved', data: result.rows[0] });
+    } catch (e) { next(e); }
+  }
+);
+
+router.put('/approvals/:id/reject',
+  async (req, res, next) => {
+    try {
+      const { query } = require('../config/database');
+      const id = req.params.id;
+      const { reason } = req.body || {};
+      const result = await query(`
+        UPDATE approval_requests
+        SET approval_status = 'rejected', final_rejection_reason = $1, updated_at = NOW()
+        WHERE id = $2 AND school_id = $3
+        RETURNING id, approval_status as status
+      `, [reason || null, id, req.user.school_id || req.user.schoolId]);
+      if (result.rows.length === 0) return res.status(404).json({ success: false, message: 'Approval request not found' });
+      return res.json({ success: true, message: 'Approval request rejected', data: result.rows[0] });
+    } catch (e) { next(e); }
+  }
+);
+
 /**
  * @route   POST /api/examinations/schedules/:scheduleId/publish
  * @desc    Publish examination schedule

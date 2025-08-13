@@ -1,12 +1,14 @@
 const express = require('express');
 const router = express.Router();
-const { authenticate, requireRole, requireUserType } = require('../../middleware/auth');
+const { authenticate, requireRole } = require('../../middleware/auth');
 
 // Import mobile controllers
 const MobileDirectorController = require('../../controllers/mobile/directorController');
 const MobilePrincipalController = require('../../controllers/mobile/principalController');
 const MobileTeacherController = require('../../controllers/mobile/teacherController');
 const MobileNotificationController = require('../../controllers/mobile/notificationController');
+const MobileHRController = require('../../controllers/mobile/hrController');
+const MobileFinanceController = require('../../controllers/mobile/financeController');
 const OfflineSyncController = require('../../controllers/mobile/offlineSyncController');
 
 // Apply authentication to all mobile routes
@@ -51,45 +53,45 @@ router.get('/', (req, res) => {
 
 // Director dashboard
 router.get('/director/dashboard',
-  requireUserType('school_director'),
+  requireRole(['school_director']),
   MobileDirectorController.getDashboard
 );
 
 // School management
 router.post('/director/switch-school',
-  requireUserType('school_director'),
+  requireRole(['school_director']),
   MobileDirectorController.switchSchool
 );
 
 router.get('/director/schools',
-  requireUserType('school_director'),
+  requireRole(['school_director']),
   MobileDirectorController.getSchools
 );
 
 // Approvals management
 router.get('/director/approvals/pending',
-  requireUserType('school_director'),
+  requireRole(['school_director']),
   MobileDirectorController.getPendingApprovals
 );
 
 router.post('/director/approvals/:id/approve',
-  requireUserType('school_director'),
+  requireRole(['school_director']),
   MobileDirectorController.approveRequest
 );
 
 router.post('/director/approvals/:id/reject',
-  requireUserType('school_director'),
+  requireRole(['school_director']),
   MobileDirectorController.rejectRequest
 );
 
 // Analytics
 router.get('/director/analytics/portfolio',
-  requireUserType('school_director'),
+  requireRole(['school_director']),
   MobileDirectorController.getPortfolioAnalytics
 );
 
 router.get('/director/analytics/school/:schoolId',
-  requireUserType('school_director'),
+  requireRole(['school_director']),
   MobileDirectorController.getSchoolAnalytics
 );
 
@@ -242,7 +244,7 @@ router.post('/teacher/communications/broadcast',
 
 // Parent dashboard
 router.get('/parent/dashboard',
-  requireUserType('parent'),
+  requireRole(['parent']),
   async (req, res, next) => {
     try {
       const parentId = req.user.userId;
@@ -336,9 +338,42 @@ router.get('/parent/dashboard',
   }
 );
 
+// =============================================================================
+// HR MOBILE ROUTES (ESSENTIALS)
+// =============================================================================
+
+router.get('/hr/dashboard',
+  requireRole(['hr']),
+  MobileHRController.getDashboard
+);
+
+router.get('/hr/leave/pending',
+  requireRole(['hr']),
+  MobileHRController.getPendingLeave
+);
+
+router.get('/hr/recruitment/pending',
+  requireRole(['hr']),
+  MobileHRController.getPendingRecruitment
+);
+
+// =============================================================================
+// FINANCE MOBILE ROUTES (ESSENTIALS)
+// =============================================================================
+
+router.get('/finance/dashboard',
+  requireRole(['finance']),
+  MobileFinanceController.getDashboard
+);
+
+router.get('/finance/transactions/recent',
+  requireRole(['finance']),
+  MobileFinanceController.getRecentTransactions
+);
+
 // Parent child academic performance
 router.get('/parent/children/:childId/academic',
-  requireUserType('parent'),
+  requireRole(['parent']),
   async (req, res, next) => {
     try {
       const { childId } = req.params;
@@ -522,7 +557,7 @@ router.get('/sync/role-data',
     try {
       const { lastSync } = req.query;
       const userId = req.user.userId;
-      const userRole = req.user.userType;
+      const userRole = req.user.role;
       const schoolId = req.user.schoolId;
       const { query } = require('../../config/database');
 

@@ -23,6 +23,7 @@ router.put('/change-password',
   userController.changePassword
 );
 router.get('/sessions', userController.getSessions);
+router.get('/capabilities', userController.getCapabilities);
 
 // User management routes (admin only)
 router.get('/',

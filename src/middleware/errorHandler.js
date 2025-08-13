@@ -47,6 +47,18 @@ class DatabaseError extends AppError {
   }
 }
 
+class NetworkError extends AppError {
+  constructor(message = 'Network operation failed') {
+    super(message, 503, 'NETWORK_ERROR');
+  }
+}
+
+class RateLimitError extends AppError {
+  constructor(message = 'Rate limit exceeded') {
+    super(message, 429, 'RATE_LIMIT_ERROR');
+  }
+}
+
 // Error logging function
 const logError = (error, req = null) => {
   const timestamp = new Date().toISOString();
@@ -136,6 +148,11 @@ const errorHandler = (error, req, res, next) => {
     // Unknown error - log and return generic error
     handledError = new AppError('Internal server error', 500, 'INTERNAL_ERROR');
   }
+
+  // Normalize common network timeouts to NetworkError
+  if (error.code === 'ECONNRESET' || error.code === 'ETIMEDOUT') {
+    handledError = new NetworkError('Database connection timeout');
+  }
   
   // Log error
   logError(handledError, req);
@@ -189,6 +206,8 @@ module.exports = {
   NotFoundError,
   ConflictError,
   DatabaseError,
+  NetworkError,
+  RateLimitError,
   
   // Error handlers
   errorHandler,

@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const StudentController = require('../controllers/studentController');
 const { authenticate, requireUserType, requireRole } = require('../middleware/auth');
+const { query } = require('../config/database');
 const { validateStudentData, validateClassData, validateEnrollmentData } = require('../middleware/validation');
 
 router.use(authenticate); // Apply authentication middleware to all routes
@@ -276,6 +277,31 @@ router.get('/export/students',
 router.get('/parents/:parentId/students',
   requireUserType(['school_user', 'admin_user']),
   StudentController.getStudentsByParent
+);
+
+// Mobile convenience: current parent's children list
+router.get('/my-children',
+  requireUserType(['school_user', 'admin_user', 'parent']),
+  async (req, res, next) => {
+    try {
+      const parentId = req.user.userId;
+      const result = await query(`
+        SELECT 
+          s.id,
+          s.first_name,
+          s.last_name,
+          s.photo_url,
+          c.id as class_id,
+          c.name as class_name
+        FROM students s
+        JOIN parent_students ps ON s.id = ps.student_id
+        LEFT JOIN classes c ON s.class_id = c.id
+        WHERE ps.parent_id = $1 AND s.is_active = true
+        ORDER BY s.first_name, s.last_name
+      `, [parentId]);
+      res.json({ success: true, data: result.rows });
+    } catch (error) { next(error); }
+  }
 );
 
 // 404 handler for student routes

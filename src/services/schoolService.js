@@ -656,16 +656,26 @@ class SchoolService {
       const { query } = require('../config/database');
       
       let sql = `
+        WITH class_counts AS (
+          SELECT 
+            c.id,
+            c.is_active,
+            c.curriculum_type,
+            c.capacity,
+            -- derive enrollment from students table when current_enrollment column is absent
+            (SELECT COUNT(*) FROM students s WHERE s.class_id = c.id AND s.enrollment_status = 'active')::int AS derived_enrollment
+          FROM classes c
+          WHERE c.school_id = $1
+        )
         SELECT 
-          COUNT(c.id) as total_classes,
-          COUNT(c.id) FILTER (WHERE c.is_active = true) as active_classes,
-          COUNT(DISTINCT c.curriculum_type) as curriculum_types,
-          AVG(c.current_enrollment) as average_enrollment,
-          SUM(c.current_enrollment) as total_students,
-          COUNT(c.id) FILTER (WHERE c.current_enrollment >= c.capacity * 0.9) as near_capacity_classes,
-          COUNT(c.id) FILTER (WHERE c.current_enrollment < c.capacity * 0.5) as under_enrolled_classes
-        FROM classes c
-        WHERE c.school_id = $1
+          COUNT(id) as total_classes,
+          COUNT(id) FILTER (WHERE is_active = true) as active_classes,
+          COUNT(DISTINCT curriculum_type) as curriculum_types,
+          AVG(derived_enrollment)::numeric(10,2) as average_enrollment,
+          SUM(derived_enrollment) as total_students,
+          COUNT(id) FILTER (WHERE derived_enrollment >= capacity * 0.9) as near_capacity_classes,
+          COUNT(id) FILTER (WHERE derived_enrollment < capacity * 0.5) as under_enrolled_classes
+        FROM class_counts
       `;
       
       const params = [schoolId];
