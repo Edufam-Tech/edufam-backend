@@ -362,6 +362,20 @@ class AdminHrController {
     });
   });
 
+  // Get leave requests list
+  getLeaves = asyncHandler(async (req, res) => {
+    const { status, page, limit } = req.query;
+    const leaves = await adminHrService.getLeaves({ status, page, limit });
+    res.json({ success: true, data: { leaves }, message: 'Leaves retrieved successfully' });
+  });
+
+  // Get assets list
+  getAssets = asyncHandler(async (req, res) => {
+    const { page, limit } = req.query;
+    const assets = await adminHrService.getAssets({ page, limit });
+    res.json({ success: true, data: { assets }, message: 'Assets retrieved successfully' });
+  });
+
   // Get department analytics
   getDepartmentAnalytics = asyncHandler(async (req, res) => {
     const { departmentId } = req.params;

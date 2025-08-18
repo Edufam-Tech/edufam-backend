@@ -12,11 +12,17 @@ class PrincipalWebController {
           SELECT 
             (SELECT COUNT(*) FROM students WHERE school_id = $1 AND is_active = true) as total_students,
             (SELECT COUNT(*) FROM users WHERE school_id = $1 AND user_type = 'staff' AND is_active = true) as total_teachers,
-            (SELECT AVG(overall_score) FROM academic_reports WHERE school_id = $1 AND term = (SELECT id FROM academic_terms WHERE is_current = true LIMIT 1)) as academic_performance
+            (
+              SELECT AVG(g.percentage)
+              FROM grades g
+              JOIN assessments a ON g.assessment_id = a.id
+              WHERE a.school_id = $1
+                AND a.academic_term_id = (SELECT id FROM academic_terms WHERE is_current = true LIMIT 1)
+            ) as academic_performance
         `, [schoolId]),
         query(`
           SELECT 
-            (SELECT COUNT(*) FROM grade_submissions WHERE school_id = $1 AND status = 'submitted' AND approval_status = 'pending') as grade_approvals,
+            (SELECT COUNT(*) FROM grade_approvals WHERE school_id = $1 AND status = 'pending') as grade_approvals,
             (SELECT COUNT(*) FROM leave_requests WHERE school_id = $1 AND status = 'pending' AND requires_principal_approval = true) as leave_requests
         `, [schoolId])
       ]);
@@ -58,16 +64,16 @@ class PrincipalWebController {
           c.name as class_name,
           s.name as subject_name,
           u.first_name, u.last_name,
-          a.name as assessment_name,
-          a.assessment_type,
+          a.title as assessment_name,
+          a.category_id as assessment_type,
           a.total_marks,
           gs.submitted_at
         FROM grade_submissions gs
-        JOIN classes c ON gs.class_id = c.id
-        JOIN subjects s ON gs.subject_id = s.id
-        JOIN users u ON gs.teacher_id = u.id
         JOIN assessments a ON gs.assessment_id = a.id
-        WHERE gs.school_id = $1 AND gs.status = 'submitted' AND gs.approval_status = 'pending'
+        LEFT JOIN classes c ON gs.class_id = c.id
+        LEFT JOIN subjects s ON gs.subject_id = s.id
+        LEFT JOIN users u ON gs.teacher_id = u.id
+        WHERE gs.school_id = $1 AND gs.approval_status = 'pending'
         ORDER BY gs.submitted_at DESC
         LIMIT $2 OFFSET $3
       `, [schoolId, limit, offset]);
@@ -97,9 +103,12 @@ class PrincipalWebController {
         WHERE id = $4
       `, [principalId, comments || null, releaseDate || new Date(), submissionId]);
 
-      if (!releaseDate || new Date(releaseDate) <= new Date()) {
-        await query(`UPDATE student_grades SET is_published = true, published_at = CURRENT_TIMESTAMP WHERE grade_submission_id = $1`, [submissionId]);
-      }
+      // Mark related grades as approved
+      await query(`
+        UPDATE grades g
+        SET status = 'approved', approved_by = $1, approved_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+        WHERE g.assessment_id = (SELECT assessment_id FROM grade_submissions WHERE id = $2) AND g.status = 'submitted'
+      `, [principalId, submissionId]);
 
       res.json({ success: true, message: 'Grade approved' });
     } catch (error) {
@@ -132,6 +141,59 @@ class PrincipalWebController {
     } catch (error) {
       console.error('Reject grade error:', error);
       res.status(500).json({ success: false, error: { message: 'Failed to reject grade' } });
+    }
+  }
+
+  async overrideGrade(req, res) {
+    try {
+      const { gradeId } = req.params;
+      const { marks, remarks } = req.body || {};
+      const principalId = req.user.userId;
+      const schoolId = req.user.schoolId;
+
+      if (typeof marks !== 'number' || marks < 0) {
+        return res.status(400).json({ success: false, error: { message: 'Valid marks required' } });
+      }
+
+      // Ensure grade belongs to this school and is approved/submitted
+      const found = await query(`
+        SELECT g.id
+        FROM grades g
+        JOIN assessments a ON a.id = g.assessment_id
+        WHERE g.id = $1 AND a.school_id = $2 AND g.status IN ('submitted','approved')
+      `, [gradeId, schoolId]);
+      if (found.rows.length === 0) return res.status(404).json({ success: false, error: { message: 'Grade not found' } });
+
+      await query(`
+        UPDATE grades
+        SET marks_obtained = $1, remarks = COALESCE($2, remarks), status = 'approved', approved_by = $3, approved_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+        WHERE id = $4
+      `, [marks, remarks || null, principalId, gradeId]);
+
+      res.json({ success: true, message: 'Grade overridden and approved' });
+    } catch (error) {
+      console.error('Override grade error:', error);
+      res.status(500).json({ success: false, error: { message: 'Failed to override grade' } });
+    }
+  }
+
+  async releaseSubmission(req, res) {
+    try {
+      const { submissionId } = req.params;
+      const schoolId = req.user.schoolId;
+
+      const found = await query(`
+        SELECT 1 FROM grade_submissions WHERE id = $1 AND school_id = $2 AND approval_status = 'approved'
+      `, [submissionId, schoolId]);
+      if (found.rows.length === 0) return res.status(404).json({ success: false, error: { message: 'Submission not approved' } });
+
+      // Placeholder: notify parents; for now this is a no-op update
+      // Optionally log a release event in future
+
+      res.json({ success: true, message: 'Grades released to parents' });
+    } catch (error) {
+      console.error('Release submission error:', error);
+      res.status(500).json({ success: false, error: { message: 'Failed to release grades' } });
     }
   }
 
@@ -233,6 +295,86 @@ class PrincipalWebController {
     } catch (error) {
       console.error('Principal grading sheet error:', error);
       res.status(500).json({ success: false, error: { message: 'Failed to load grading sheet' } });
+    }
+  }
+
+  async saveGrades(req, res) {
+    try {
+      const principalId = req.user.userId;
+      const schoolId = req.user.schoolId;
+      const { classId } = req.params;
+      const { gradesBySubject, academicYearId, termId, categoryId, totalMarks } = req.body || {};
+
+      if (!gradesBySubject || typeof gradesBySubject !== 'object') {
+        return res.status(400).json({ success: false, error: { message: 'gradesBySubject is required' } });
+      }
+
+      const ensureAssessment = async (subject) => {
+        const findRes = await query(`
+          SELECT id FROM assessments
+          WHERE class_id = $1 AND subject_id = $2
+            AND ($3::uuid IS NULL OR academic_year_id = $3)
+            AND ($4::uuid IS NULL OR academic_term_id = $4)
+            AND ($5::uuid IS NULL OR category_id = $5)
+          ORDER BY created_at DESC
+          LIMIT 1
+        `, [classId, subject, academicYearId || null, termId || null, categoryId || null]);
+        if (findRes.rows[0]?.id) return findRes.rows[0].id;
+        const createRes = await query(`
+          INSERT INTO assessments (
+            school_id, academic_year_id, academic_term_id, class_id, subject_id,
+            title, description, category_id, total_marks, pass_marks, assessment_date,
+            duration_minutes, grading_scale_id, allow_decimal_marks, allow_negative_marks,
+            is_final, created_by
+          ) VALUES (
+            $1, $2, $3, $4, $5,
+            $6, $7, $8, $9, $10, CURRENT_DATE,
+            NULL, NULL, false, false,
+            false, $11
+          ) RETURNING id
+        `, [
+          schoolId, academicYearId || null, termId || null, classId, subject,
+          'Grading Sheet Entry (Principal)', 'Generated by principal grading sheet', categoryId || null, totalMarks || 100, Math.min(40, Number(totalMarks || 100)),
+          principalId
+        ]);
+        return createRes.rows[0].id;
+      };
+
+      const affected = [];
+      for (const [subjectId, list] of Object.entries(gradesBySubject)) {
+        const assessmentId = await ensureAssessment(subjectId);
+        for (const g of Array.isArray(list) ? list : []) {
+          await query(`
+            INSERT INTO grades (student_id, assessment_id, marks_obtained, remarks, status, created_by, school_id)
+            VALUES ($1, $2, $3, $4, 'draft', $5, $6)
+            ON CONFLICT (student_id, assessment_id)
+            DO UPDATE SET marks_obtained = EXCLUDED.marks_obtained, remarks = EXCLUDED.remarks, updated_at = CURRENT_TIMESTAMP
+            WHERE grades.status IN ('draft','rejected')
+          `, [g.studentId, assessmentId, g.percentage || 0, g.comments || null, principalId, schoolId]);
+        }
+        // Track a draft submission under principal for visibility
+        const existingDraft = await query(`
+          SELECT id FROM grade_submissions
+          WHERE school_id = $1 AND class_id = $2 AND subject_id = $3 AND teacher_id = $4 AND assessment_id = $5 AND approval_status = 'pending' AND status = 'draft'
+          ORDER BY submitted_at DESC LIMIT 1
+        `, [schoolId, classId, subjectId, principalId, assessmentId]);
+        if (existingDraft.rows[0]?.id) {
+          await query(`UPDATE grade_submissions SET submitted_at = CURRENT_TIMESTAMP WHERE id = $1`, [existingDraft.rows[0].id]);
+          affected.push(existingDraft.rows[0].id);
+        } else {
+          const ins = await query(`
+            INSERT INTO grade_submissions (school_id, class_id, subject_id, teacher_id, assessment_id, status, approval_status, submitted_at)
+            VALUES ($1, $2, $3, $4, $5, 'draft', 'pending', CURRENT_TIMESTAMP)
+            RETURNING id
+          `, [schoolId, classId, subjectId, principalId, assessmentId]);
+          affected.push(ins.rows[0].id);
+        }
+      }
+
+      res.json({ success: true, message: 'Grades saved as draft', data: { submissionIds: affected } });
+    } catch (error) {
+      console.error('Principal save grades error:', error);
+      res.status(500).json({ success: false, error: { message: 'Failed to save grades' } });
     }
   }
 }

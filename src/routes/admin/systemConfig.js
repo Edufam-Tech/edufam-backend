@@ -1,11 +1,10 @@
 const express = require('express');
 const router = express.Router();
-const { authenticate, requireRole, requireUserType } = require('../../middleware/auth');
+const { authenticate, requireRole } = require('../../middleware/auth');
 const SystemConfigController = require('../../controllers/admin/systemConfigController');
 
 // Apply admin authentication to all routes
 router.use(authenticate);
-router.use(requireUserType('platform_admin'));
 
 // =============================================================================
 // SYSTEM SETTINGS ROUTES
@@ -125,7 +124,7 @@ router.delete('/features/:id',
  * @access  Private (Platform Admin)
  */
 router.get('/maintenance',
-  requireRole(['super_admin', 'support_admin']),
+  requireRole(['super_admin', 'support_admin', 'edufam_admin']),
   SystemConfigController.getMaintenanceMode
 );
 
@@ -135,7 +134,7 @@ router.get('/maintenance',
  * @access  Private (Super Admin)
  */
 router.post('/maintenance/enable',
-  requireRole(['super_admin']),
+  requireRole(['super_admin', 'edufam_admin']),
   SystemConfigController.enableMaintenanceMode
 );
 
@@ -145,7 +144,7 @@ router.post('/maintenance/enable',
  * @access  Private (Super Admin)
  */
 router.post('/maintenance/disable',
-  requireRole(['super_admin']),
+  requireRole(['super_admin', 'edufam_admin']),
   SystemConfigController.disableMaintenanceMode
 );
 

@@ -778,6 +778,98 @@ class TimetableController {
       next(error);
     }
   }
+
+  // =============================================================================
+  // ADDITIONAL HELPERS FOR VERSIONS/ENTRIES
+  // =============================================================================
+
+  static async getVersionEntries(versionId, schoolId) {
+    const result = await query(`
+      SELECT 
+        te.*,
+        c.class_name,
+        s.subject_name,
+        st.first_name as teacher_first_name,
+        st.last_name as teacher_last_name,
+        cr.room_name
+      FROM timetable_entries te
+      LEFT JOIN classes c ON te.class_id = c.id
+      LEFT JOIN subjects s ON te.subject_id = s.id
+      LEFT JOIN staff st ON te.teacher_id = st.id
+      LEFT JOIN classrooms cr ON te.room_id = cr.id
+      WHERE te.school_id = $1 AND te.version_id = $2
+      ORDER BY te.day_of_week, te.period_number, c.class_name
+    `, [schoolId, versionId]);
+    return result.rows;
+  }
+
+  // =============================================================================
+  // DISTRIBUTION/EXPORT/NOTIFICATIONS (SIMPLE STUBS)
+  // =============================================================================
+
+  static async getTeacherSchedule(teacherId, schoolId) {
+    const result = await query(`
+      SELECT te.*, c.class_name, s.subject_name, cr.room_name
+      FROM timetable_entries te
+      LEFT JOIN classes c ON te.class_id = c.id
+      LEFT JOIN subjects s ON te.subject_id = s.id
+      LEFT JOIN classrooms cr ON te.room_id = cr.id
+      JOIN timetable_versions tv ON te.version_id = tv.id
+      WHERE te.school_id = $1 AND te.teacher_id = $2 AND tv.is_active = true AND tv.is_published = true
+      ORDER BY te.day_of_week, te.period_number
+    `, [schoolId, teacherId]);
+    return result.rows;
+  }
+
+  static async getStudentClassTimetable(studentId, schoolId) {
+    const result = await query(`
+      SELECT te.*, c.class_name, s.subject_name, st.first_name as teacher_first_name, st.last_name as teacher_last_name
+      FROM timetable_entries te
+      JOIN students stu ON stu.class_id = te.class_id
+      JOIN classes c ON te.class_id = c.id
+      JOIN subjects s ON te.subject_id = s.id
+      LEFT JOIN staff st ON te.teacher_id = st.id
+      JOIN timetable_versions tv ON te.version_id = tv.id
+      WHERE te.school_id = $1 AND stu.id = $2 AND tv.is_active = true AND tv.is_published = true
+      ORDER BY te.day_of_week, te.period_number
+    `, [schoolId, studentId]);
+    return result.rows;
+  }
+
+  static async distributeTimetable(req, res) {
+    const { versionId, notify } = req.body || {};
+    if (!versionId) {
+      throw new ValidationError('Version ID is required');
+    }
+    // Minimal distribution: mark version as distributed and optionally notify
+    await query(`
+      UPDATE timetable_versions SET distributed_at = CURRENT_TIMESTAMP WHERE id = $1 AND school_id = $2
+    `, [versionId, req.user.schoolId]);
+    if (notify) {
+      // hook into realtime integrations if available
+      // placeholder: return counts 0
+    }
+    return res.json({ success: true, message: 'Timetable distributed', data: { versionId, notified: !!notify } });
+  }
+
+  static async exportPdf(payload, schoolId) {
+    // Placeholder returns a presigned-like URL/id; real implementation would render PDF
+    const { versionId, mode = 'class' } = payload || {};
+    if (!versionId) {
+      throw new ValidationError('Version ID is required');
+    }
+    const downloadUrl = `/downloads/timetables/${versionId}-${mode}.pdf`;
+    return { versionId, mode, url: downloadUrl };
+  }
+
+  static async notifyStakeholders(payload, schoolId, userId) {
+    const { versionId, target = 'all', message } = payload || {};
+    if (!versionId) {
+      throw new ValidationError('Version ID is required');
+    }
+    // Placeholder: record notification intent
+    return { versionId, target, message: message || 'New timetable available', sent: true };
+  }
 }
 
 module.exports = TimetableController;

@@ -215,9 +215,25 @@ class TeacherWebController {
               VALUES ($1, $2, $3, $4, 'draft', $5, $6)
               ON CONFLICT (student_id, assessment_id)
               DO UPDATE SET marks_obtained = EXCLUDED.marks_obtained, remarks = EXCLUDED.remarks, updated_at = CURRENT_TIMESTAMP
+              WHERE grades.status IN ('draft','rejected')
               RETURNING id
             `, [g.studentId, assessmentId, g.percentage || 0, g.comments || null, teacherId, req.user.school_id]);
             createdOrUpdatedGradeIds.push(ins.rows[0].id);
+          }
+
+          // Upsert a draft submission record for this class/subject to make drafts visible in UI
+          const existingDraft = await query(`
+            SELECT id FROM grade_submissions
+            WHERE school_id = $1 AND class_id = $2 AND subject_id = $3 AND teacher_id = $4 AND assessment_id = $5 AND approval_status = 'pending' AND status = 'draft'
+            ORDER BY submitted_at DESC LIMIT 1
+          `, [req.user.school_id, classId, subId, teacherId, assessmentId]);
+          if (existingDraft.rows[0]?.id) {
+            await query(`UPDATE grade_submissions SET submitted_at = CURRENT_TIMESTAMP WHERE id = $1`, [existingDraft.rows[0].id]);
+          } else {
+            await query(`
+              INSERT INTO grade_submissions (school_id, class_id, subject_id, teacher_id, assessment_id, status, approval_status, submitted_at)
+              VALUES ($1, $2, $3, $4, $5, 'draft', 'pending', CURRENT_TIMESTAMP)
+            `, [req.user.school_id, classId, subId, teacherId, assessmentId]);
           }
         }
       } else {
@@ -229,9 +245,25 @@ class TeacherWebController {
             VALUES ($1, $2, $3, $4, 'draft', $5, $6)
             ON CONFLICT (student_id, assessment_id)
             DO UPDATE SET marks_obtained = EXCLUDED.marks_obtained, remarks = EXCLUDED.remarks, updated_at = CURRENT_TIMESTAMP
+            WHERE grades.status IN ('draft','rejected')
             RETURNING id
           `, [g.studentId, assessmentId, g.percentage || 0, g.comments || null, teacherId, req.user.school_id]);
           createdOrUpdatedGradeIds.push(ins.rows[0].id);
+        }
+
+        // Record or update a draft submission entry
+        const existingDraft = await query(`
+          SELECT id FROM grade_submissions
+          WHERE school_id = $1 AND class_id = $2 AND subject_id = $3 AND teacher_id = $4 AND assessment_id = $5 AND approval_status = 'pending' AND status = 'draft'
+          ORDER BY submitted_at DESC LIMIT 1
+        `, [req.user.school_id, classId, subjectId, teacherId, assessmentId]);
+        if (existingDraft.rows[0]?.id) {
+          await query(`UPDATE grade_submissions SET submitted_at = CURRENT_TIMESTAMP WHERE id = $1`, [existingDraft.rows[0].id]);
+        } else {
+          await query(`
+            INSERT INTO grade_submissions (school_id, class_id, subject_id, teacher_id, assessment_id, status, approval_status, submitted_at)
+            VALUES ($1, $2, $3, $4, $5, 'draft', 'pending', CURRENT_TIMESTAMP)
+          `, [req.user.school_id, classId, subjectId, teacherId, assessmentId]);
         }
       }
 
@@ -291,6 +323,7 @@ class TeacherWebController {
             VALUES ($1, $2, $3, $4, 'submitted', $5, CURRENT_TIMESTAMP, $5, $6)
             ON CONFLICT (student_id, assessment_id)
             DO UPDATE SET marks_obtained = EXCLUDED.marks_obtained, remarks = EXCLUDED.remarks, status = 'submitted', submitted_by = $5, submitted_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+            WHERE grades.status IN ('draft','rejected')
           `, [g.studentId, assessmentId, g.percentage || 0, g.comments || null, teacherId, schoolId]);
         }
         const sub = await query(`
@@ -304,6 +337,24 @@ class TeacherWebController {
       res.json({ success: true, message: 'Grades submitted for approval', data: { submissionIds } });
     } catch (e) {
       res.status(500).json({ success: false, error: { message: 'Failed to submit grades' } });
+    }
+  }
+
+  async getMySubmissions(req, res) {
+    try {
+      const teacherId = req.user.userId;
+      const schoolId = req.user.school_id;
+      const { classId } = req.params;
+      const rows = await query(`
+        SELECT gs.id, gs.status, gs.approval_status, gs.submitted_at, s.name as subject_name
+        FROM grade_submissions gs
+        LEFT JOIN subjects s ON gs.subject_id = s.id
+        WHERE gs.school_id = $1 AND gs.teacher_id = $2 AND gs.class_id = $3
+        ORDER BY gs.submitted_at DESC
+      `, [schoolId, teacherId, classId]);
+      res.json({ success: true, data: { submissions: rows.rows } });
+    } catch (e) {
+      res.status(500).json({ success: false, error: { message: 'Failed to load submissions' } });
     }
   }
 

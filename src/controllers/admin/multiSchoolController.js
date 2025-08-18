@@ -358,7 +358,6 @@ class MultiSchoolController {
           COUNT(DISTINCT u.id) FILTER (WHERE u.user_type = 'school_user') as total_users,
           COUNT(DISTINCT st.id) as total_students,
           COUNT(DISTINCT staff.id) as total_staff,
-          ss.subscription_status,
           ss.next_billing_date,
           pr.region_name
         FROM schools s
@@ -369,7 +368,7 @@ class MultiSchoolController {
         LEFT JOIN school_onboarding_requests sor ON s.email = sor.principal_email
         LEFT JOIN platform_regions pr ON sor.region_id = pr.id
         ${whereClause}
-        GROUP BY s.id, ss.subscription_status, ss.next_billing_date, pr.region_name
+        GROUP BY s.id, ss.next_billing_date, pr.region_name
         ORDER BY s.created_at DESC
         LIMIT $${params.length + 1} OFFSET $${params.length + 2}
       `, [...params, limit, offset]);
@@ -401,7 +400,6 @@ class MultiSchoolController {
             COUNT(DISTINCT st.id) as total_students,
             COUNT(DISTINCT staff.id) as total_staff,
             COUNT(DISTINCT c.id) as total_classes,
-            ss.subscription_status,
             ss.next_billing_date,
             ss.monthly_cost,
             pr.region_name
@@ -414,7 +412,7 @@ class MultiSchoolController {
           LEFT JOIN school_onboarding_requests sor ON s.email = sor.principal_email
           LEFT JOIN platform_regions pr ON sor.region_id = pr.id
           WHERE s.id = $1
-          GROUP BY s.id, ss.subscription_status, ss.next_billing_date, ss.monthly_cost, pr.region_name
+          GROUP BY s.id, ss.next_billing_date, ss.monthly_cost, pr.region_name
         `, [id]),
 
         query(`

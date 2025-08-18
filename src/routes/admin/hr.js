@@ -106,6 +106,14 @@ router.put('/leaves/:leaveId/process', [
   body('comments').optional().isString().trim().withMessage('Comments must be a string')
 ], validate, adminHrController.processLeaveRequest);
 
+// List leave requests
+router.get('/leaves', [
+  requireRole(['super_admin', 'edufam_admin', 'hr_manager']),
+  query('status').optional().isIn(['pending','approved','rejected']).withMessage('Invalid status'),
+  query('page').optional().isInt({ min: 1 }),
+  query('limit').optional().isInt({ min: 1, max: 200 })
+], validate, adminHrController.getLeaves);
+
 // ====================================
 // DEPARTMENT MANAGEMENT
 // ====================================
@@ -181,6 +189,13 @@ router.post('/assets', [
   body('warrantyPeriodMonths').optional().isInt({ min: 0 }).withMessage('Warranty period must be a positive integer'),
   body('departmentId').optional().isUUID().withMessage('Department ID must be valid UUID')
 ], validate, adminHrController.addAsset);
+
+// List assets
+router.get('/assets', [
+  requireRole(['super_admin', 'edufam_admin', 'hr_manager']),
+  query('page').optional().isInt({ min: 1 }),
+  query('limit').optional().isInt({ min: 1, max: 200 })
+], validate, adminHrController.getAssets);
 
 /**
  * Assign asset to employee

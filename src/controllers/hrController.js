@@ -558,6 +558,24 @@ class HRController {
         throw new NotFoundError('Leave application not found');
       }
 
+      // Fire realtime notification to requester (best-effort)
+      try {
+        const RealtimeIntegrations = require('../integrations/realtimeIntegrations');
+        const leave = result.rows[0];
+        await RealtimeIntegrations.createCustomEvent({
+          eventType: action === 'approve' ? 'leave_request_approved' : 'leave_request_rejected',
+          schoolId: req.user.school_id,
+          sourceUserId: req.user.id,
+          targetUserIds: leave.applied_by ? [leave.applied_by] : [],
+          title: action === 'approve' ? 'Leave Request Approved' : 'Leave Request Rejected',
+          message: action === 'approve' ? 'Your leave request has been approved.' : `Your leave request was rejected${comments ? `: ${comments}` : ''}`,
+          sourceEntityType: 'leave_application',
+          sourceEntityId: leave.id,
+          actionUrl: `/profile`,
+          priority: action === 'approve' ? 'normal' : 'high',
+        });
+      } catch (e) { /* ignore notification errors */ }
+
       res.json({
         success: true,
         message: `Leave application ${action}d successfully`,
@@ -947,6 +965,68 @@ class HRController {
     }
   }
 
+  // Dashboard users (teachers, principal, director, hr, finance) for current school
+  static async getDashboardUsers(req, res, next) {
+    try {
+      const result = await query(`
+        SELECT 
+          u.id as user_id,
+          u.first_name, u.last_name, u.email, u.role, u.activation_status,
+          u.profile_picture_url,
+          e.id as employee_id, e.position, e.employment_status, d.name as department_name
+        FROM users u
+        JOIN employees e ON e.user_id = u.id
+        LEFT JOIN departments d ON e.department_id = d.id
+        WHERE u.school_id = $1
+          AND u.role IN ('school_director','principal','teacher','hr','finance','parent')
+        ORDER BY u.first_name, u.last_name
+      `, [req.user.school_id]);
+
+      res.json({ success: true, data: result.rows });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // Create dashboard user account for an existing staff member (assign role)
+  static async createDashboardUserForStaff(req, res, next) {
+    try {
+      const { employeeId } = req.params;
+      const { role } = req.body; // 'teacher' | 'hr' | 'finance' | 'principal' | 'school_director'
+
+      if (!role || !['teacher','hr','finance','principal','school_director'].includes(role)) {
+        throw new ValidationError('Valid dashboard role is required');
+      }
+
+      // Get employee and existing user
+      const emp = await query(`
+        SELECT e.id as employee_id, e.user_id, u.role as current_role, u.activation_status
+        FROM employees e JOIN users u ON e.user_id = u.id
+        WHERE e.id = $1 AND e.school_id = $2
+      `, [employeeId, req.user.school_id]);
+
+      if (emp.rows.length === 0) {
+        throw new NotFoundError('Employee not found');
+      }
+
+      // Update role on the existing user to grant dashboard access
+      const updated = await query(`
+        UPDATE users 
+        SET role = $1, activation_status = COALESCE(activation_status, 'active')
+        WHERE id = $2 AND school_id = $3
+        RETURNING id, email, role, activation_status
+      `, [role, emp.rows[0].user_id, req.user.school_id]);
+
+      res.status(201).json({
+        success: true,
+        message: 'Dashboard user account created/updated for staff',
+        data: updated.rows[0]
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   static async createTeachingStaff(req, res, next) {
     try {
       const { 
@@ -1119,7 +1199,7 @@ class HRController {
     try {
       const nonDashboardUsers = await query(`
         SELECT 
-          u.id, u.first_name, u.last_name, u.email, u.phone,
+          u.id, u.first_name, u.last_name, u.email, u.phone, u.profile_picture_url,
           e.employee_number, e.position, e.hire_date,
           d.name as department_name
         FROM users u
@@ -1174,6 +1254,117 @@ class HRController {
         message: 'Non-dashboard user created successfully',
         data: employeeResult.rows[0]
       });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // =========================
+  // Parents Management
+  // =========================
+  static async getParents(req, res, next) {
+    try {
+      const parents = await query(`
+        SELECT 
+          u.id, u.first_name, u.last_name, u.email, u.phone_number, u.activation_status,
+          (
+            SELECT COUNT(*) FROM enrollments e WHERE e.parent_id = u.id
+          ) AS children_count
+        FROM users u
+        WHERE u.school_id = $1 AND u.role = 'parent'
+        ORDER BY u.first_name, u.last_name
+      `, [req.user.school_id]);
+
+      res.json({ success: true, data: parents.rows });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async createParent(req, res, next) {
+    try {
+      const { first_name, last_name, email, phone_number, password, student_ids } = req.body;
+
+      if (!first_name || !last_name || !email) {
+        throw new ValidationError('first_name, last_name and email are required');
+      }
+
+      const hashed = await bcrypt.hash(password || 'DefaultPass123!', 10);
+      const userRes = await query(`
+        INSERT INTO users (first_name, last_name, email, phone_number, password_hash, user_type, role, school_id, activation_status)
+        VALUES ($1, $2, $3, $4, $5, 'school_user', 'parent', $6, 'active')
+        RETURNING id
+      `, [first_name, last_name, email, phone_number || null, hashed, req.user.school_id]);
+
+      const parentId = userRes.rows[0].id;
+
+      if (Array.isArray(student_ids) && student_ids.length > 0) {
+        for (const sid of student_ids) {
+          await query(`
+            INSERT INTO enrollments (student_id, parent_id, school_id)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (student_id, parent_id) DO NOTHING
+          `, [sid, parentId, req.user.school_id]);
+        }
+      }
+
+      res.status(201).json({ success: true, message: 'Parent created successfully', data: { id: parentId } });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async updateParent(req, res, next) {
+    try {
+      const { parentId } = req.params;
+      const { first_name, last_name, phone_number, activation_status } = req.body;
+
+      const result = await query(`
+        UPDATE users
+        SET first_name = COALESCE($2, first_name),
+            last_name = COALESCE($3, last_name),
+            phone_number = COALESCE($4, phone_number),
+            activation_status = COALESCE($5, activation_status)
+        WHERE id = $1 AND school_id = $6 AND role = 'parent'
+        RETURNING id, first_name, last_name, email, phone_number, activation_status
+      `, [parentId, first_name, last_name, phone_number, activation_status, req.user.school_id]);
+
+      if (result.rows.length === 0) {
+        throw new NotFoundError('Parent not found');
+      }
+
+      res.json({ success: true, message: 'Parent updated', data: result.rows[0] });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async linkParentStudent(req, res, next) {
+    try {
+      const { parentId } = req.params;
+      const { student_id } = req.body;
+      if (!student_id) throw new ValidationError('student_id required');
+
+      await query(`
+        INSERT INTO enrollments (student_id, parent_id, school_id)
+        VALUES ($1, $2, $3)
+        ON CONFLICT (student_id, parent_id) DO NOTHING
+      `, [student_id, parentId, req.user.school_id]);
+
+      res.status(201).json({ success: true, message: 'Student linked to parent' });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async unlinkParentStudent(req, res, next) {
+    try {
+      const { parentId, studentId } = req.params;
+      await query(`
+        DELETE FROM enrollments WHERE parent_id = $1 AND student_id = $2 AND school_id = $3
+      `, [parentId, studentId, req.user.school_id]);
+
+      res.json({ success: true, message: 'Student unlinked from parent' });
     } catch (error) {
       next(error);
     }
@@ -1473,6 +1664,39 @@ class HRController {
       `, [req.user.school_id, position_title, department_id, description, 
           JSON.stringify(requirements), priority, req.user.userId]);
 
+      const created = result.rows[0];
+
+      // Create a corresponding approval request for the School Director dashboard
+      try {
+        await query(`
+          INSERT INTO approval_requests (
+            school_id,
+            request_type,
+            request_category,
+            request_id,
+            request_title,
+            request_description,
+            request_data,
+            requested_by,
+            priority,
+            approval_status
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'pending')
+        `, [
+          created.school_id,
+          'recruitment',
+          'hr',
+          created.id,
+          created.position_title,
+          created.description || null,
+          JSON.stringify(created),
+          req.user.userId,
+          created.priority || 'normal'
+        ]);
+      } catch (e) {
+        // Do not block creation if approval logging fails; log and continue
+        console.error('Failed to log recruitment approval request:', e?.message || e);
+      }
+
       res.status(201).json({
         success: true,
         message: 'Recruitment request created successfully',
@@ -1500,6 +1724,40 @@ class HRController {
         throw new NotFoundError('Recruitment request not found');
       }
 
+      const approvedRequest = result.rows[0];
+
+      // Auto-publish to public careers by creating a job_postings record
+      try {
+        await query(`
+          INSERT INTO job_postings (
+            school_id, title, department_id, description, requirements,
+            status, posted_by
+          )
+          VALUES ($1, $2, $3, $4, $5, 'active', $6)
+          ON CONFLICT DO NOTHING
+        `, [
+          approvedRequest.school_id,
+          approvedRequest.position_title,
+          approvedRequest.department_id || null,
+          approvedRequest.description || null,
+          JSON.stringify(approvedRequest.requirements || []),
+          req.user.userId
+        ]);
+      } catch (inner) {
+        // Do not block approval if publishing fails; log and continue
+        console.error('Failed to auto-create job posting from approved recruitment:', inner?.message || inner);
+      }
+
+      // Sync approval_requests entry status if present
+      try {
+        await query(
+          `UPDATE approval_requests SET approval_status = 'approved', final_approver_id = $1, final_approved_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE request_type = 'recruitment' AND request_id = $2 AND school_id = $3`,
+          [req.user.userId, requestId, req.user.school_id]
+        );
+      } catch (syncErr) {
+        console.error('Failed to sync approval_requests for recruitment approval:', syncErr?.message || syncErr);
+      }
+
       res.json({
         success: true,
         message: 'Recruitment request approved successfully',
@@ -1525,6 +1783,16 @@ class HRController {
 
       if (result.rows.length === 0) {
         throw new NotFoundError('Recruitment request not found');
+      }
+
+      // Sync approval_requests entry status if present
+      try {
+        await query(
+          `UPDATE approval_requests SET approval_status = 'rejected', final_rejection_reason = $1, updated_at = CURRENT_TIMESTAMP WHERE request_type = 'recruitment' AND request_id = $2 AND school_id = $3`,
+          [rejection_reason || null, requestId, req.user.school_id]
+        );
+      } catch (syncErr) {
+        console.error('Failed to sync approval_requests for recruitment rejection:', syncErr?.message || syncErr);
       }
 
       res.json({

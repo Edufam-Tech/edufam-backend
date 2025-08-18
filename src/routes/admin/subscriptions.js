@@ -3,9 +3,7 @@ const router = express.Router();
 const { authenticate, requireRole, requireUserType } = require('../../middleware/auth');
 const SubscriptionController = require('../../controllers/admin/subscriptionController');
 
-// Apply admin authentication to all routes
-router.use(authenticate);
-router.use(requireUserType('platform_admin'));
+// Admin authentication is applied at router.mount in routes/index.js via adminAuth
 
 // =============================================================================
 // SUBSCRIPTION PLAN MANAGEMENT ROUTES
@@ -17,7 +15,7 @@ router.use(requireUserType('platform_admin'));
  * @access  Private (Platform Admin)
  */
 router.get('/plans',
-  requireRole(['super_admin', 'admin_finance']),
+  requireRole(['super_admin', 'admin_finance', 'support_hr']),
   SubscriptionController.getSubscriptionPlans
 );
 

@@ -406,6 +406,27 @@ class MarketplaceController {
     });
   });
 
+  // Update product (owner vendor or admin)
+  updateProduct = asyncHandler(async (req, res) => {
+    const { productId } = req.params;
+    const updates = req.body;
+
+    const product = await marketplaceService.updateProduct(productId, req.user, updates);
+
+    res.json({
+      success: true,
+      data: { product },
+      message: 'Product updated successfully'
+    });
+  });
+
+  // Delete product (owner vendor or admin)
+  deleteProduct = asyncHandler(async (req, res) => {
+    const { productId } = req.params;
+    await marketplaceService.deleteProduct(productId, req.user);
+    res.json({ success: true, message: 'Product deleted successfully' });
+  });
+
   /**
    * Shopping Cart Management
    */
@@ -561,6 +582,48 @@ class MarketplaceController {
       data: { orders },
       message: 'Order placed successfully'
     });
+  });
+
+  // List orders (admin can filter by vendor/status; customers see own orders)
+  getOrders = asyncHandler(async (req, res) => {
+    const { status, vendorId, page, limit } = req.query;
+
+    const orders = await marketplaceService.getOrders({
+      requester: req.user,
+      status,
+      vendorId,
+      page: parseInt(page) || 1,
+      limit: parseInt(limit) || 20,
+    });
+
+    res.json({
+      success: true,
+      data: { orders, pagination: { page: parseInt(page) || 1, limit: parseInt(limit) || 20, hasMore: orders.length === (parseInt(limit) || 20) } },
+      message: 'Orders retrieved successfully',
+    });
+  });
+
+  // Get order details
+  getOrderById = asyncHandler(async (req, res) => {
+    const { orderId } = req.params;
+    const order = await marketplaceService.getOrderById(orderId, req.user);
+    res.json({ success: true, data: { order }, message: 'Order details retrieved successfully' });
+  });
+
+  // Update order status / shipping info
+  updateOrderStatus = asyncHandler(async (req, res) => {
+    const { orderId } = req.params;
+    const { orderStatus, shippingStatus, trackingNumber, shippingCarrier, estimatedDeliveryDate } = req.body;
+
+    const updated = await marketplaceService.updateOrderStatus(orderId, req.user, {
+      orderStatus,
+      shippingStatus,
+      trackingNumber,
+      shippingCarrier,
+      estimatedDeliveryDate,
+    });
+
+    res.json({ success: true, data: { order: updated }, message: 'Order updated successfully' });
   });
 
   /**

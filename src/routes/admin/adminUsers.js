@@ -2,6 +2,8 @@ const express = require('express');
 const router = express.Router();
 const { authenticate, requireRole, requireUserType } = require('../../middleware/auth');
 const AdminUserController = require('../../controllers/admin/adminUserController');
+const userController = require('../../controllers/userController');
+const { ValidationError } = require('../../middleware/errorHandler');
 
 // Apply admin authentication to all routes
 router.use(authenticate);
@@ -29,6 +31,33 @@ router.get('/',
 router.post('/',
   requireRole(['super_admin']),
   AdminUserController.createAdminUser
+);
+
+/**
+ * @route   POST /api/admin/users/school
+ * @desc    Create a school user (admin-assisted)
+ * @access  Private (Super Admin, Support HR, Regional Admin)
+ */
+router.post('/school',
+  requireRole(['super_admin', 'support_hr', 'regional_admin']),
+  async (req, res, next) => {
+    try {
+      // Force school user type
+      req.body = {
+        ...req.body,
+        userType: 'school_user',
+      };
+      // Require schoolId for school users
+      if (!req.body.schoolId) {
+        throw new ValidationError('schoolId is required for school users');
+      }
+      // Grant user management capability for delegated controller
+      req.canManageAllUsers = true;
+      return userController.createUser(req, res, next);
+    } catch (error) {
+      next(error);
+    }
+  }
 );
 
 /**

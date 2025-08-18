@@ -14,6 +14,7 @@ router.get('/gradebook/:classId/:subjectId', teacherController.getClassGradebook
 router.get('/grading-sheet/:classId', teacherController.getClassGradingSheet);
 router.post('/gradebook/:classId/save', teacherController.saveGrades);
 router.post('/gradebook/:classId/submit', teacherController.submitGrades);
+router.get('/gradebook/:classId/submissions', teacherController.getMySubmissions);
 router.get('/attendance/:classId/summary', teacherController.getAttendanceSummary);
 
 module.exports = router;

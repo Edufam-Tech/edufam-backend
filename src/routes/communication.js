@@ -12,14 +12,40 @@ router.post('/messages/send',
   CommunicationController.sendMessage
 );
 
+// Recipient directory for messaging (exclude director)
+router.get('/messages/users',
+  authenticate,
+  CommunicationController.getMessagingUsers
+);
+
 // Conversations (threads)
 // Note: we use message_threads + thread_participants under the hood
 router.get('/messages/conversations', authenticate, CommunicationController.getConversations);
-router.post('/messages/conversations', authenticate, CommunicationController.createConversation);
+router.post(
+  '/messages/conversations',
+  authenticate,
+  requireRole(['principal','teacher','hr','finance','parent']),
+  CommunicationController.createConversation
+);
 router.get('/messages/conversations/:conversationId', authenticate, CommunicationController.getConversationDetails);
-router.post('/messages/conversations/:conversationId/messages', authenticate, CommunicationController.sendThreadMessage);
-router.post('/messages/conversations/:conversationId/participants', authenticate, CommunicationController.addParticipant);
-router.delete('/messages/conversations/:conversationId/participants/:userId', authenticate, CommunicationController.removeParticipant);
+router.post(
+  '/messages/conversations/:conversationId/messages',
+  authenticate,
+  requireRole(['principal','teacher','hr','finance','parent']),
+  CommunicationController.sendThreadMessage
+);
+router.post(
+  '/messages/conversations/:conversationId/participants',
+  authenticate,
+  requireRole(['principal','teacher','hr','finance','parent']),
+  CommunicationController.addParticipant
+);
+router.delete(
+  '/messages/conversations/:conversationId/participants/:userId',
+  authenticate,
+  requireRole(['principal','teacher','hr','finance','parent']),
+  CommunicationController.removeParticipant
+);
 
 // Conversation history (mobile convenience endpoint)
 router.get('/messages/history/:conversationId', authenticate, CommunicationController.getConversationHistory);
@@ -64,7 +90,12 @@ router.get('/announcements/recent',
     try {
       const days = parseInt(req.query.days || '7', 10);
       const result = await query(`
-        SELECT id, title, message, created_at, target_audience
+        SELECT 
+          id,
+          title,
+          content AS message,
+          created_at,
+          target_audience
         FROM announcements
         WHERE school_id = $1
           AND created_at >= CURRENT_DATE - INTERVAL '${days} days'

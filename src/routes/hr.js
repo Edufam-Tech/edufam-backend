@@ -4,6 +4,7 @@ const { authenticate, requireRole } = require('../middleware/auth');
 
 // Import controllers
 const HRController = require('../controllers/hrController');
+const { SCHOOL_DASHBOARD_ROLES } = require('../auth/roleDefinitions');
 
 // Employee Management Routes
 router.post('/employees', 
@@ -35,6 +36,20 @@ router.get('/staff/all-categories',
   authenticate, 
   requireRole(['hr', 'principal', 'school_director', 'admin']), 
   HRController.getAllStaffCategories
+);
+
+// Dashboard users among staff (teachers, hr, finance, principal, director)
+router.get('/staff/dashboard-users',
+  authenticate,
+  requireRole(['hr', 'principal', 'school_director', 'admin']),
+  HRController.getDashboardUsers
+);
+
+// Promote an existing staff member to a dashboard user role
+router.post('/staff/:employeeId/create-user',
+  authenticate,
+  requireRole(['hr', 'principal', 'school_director', 'admin']),
+  HRController.createDashboardUserForStaff
 );
 
 // Aliases to match frontend API map
@@ -102,6 +117,37 @@ router.post('/staff/bulk-import',
   HRController.bulkImportStaff
 );
 
+// Parents management
+router.get('/parents',
+  authenticate,
+  requireRole(['hr', 'principal', 'school_director', 'admin']),
+  HRController.getParents
+);
+
+router.post('/parents',
+  authenticate,
+  requireRole(['hr', 'principal', 'school_director', 'admin']),
+  HRController.createParent
+);
+
+router.put('/parents/:parentId',
+  authenticate,
+  requireRole(['hr', 'principal', 'school_director', 'admin']),
+  HRController.updateParent
+);
+
+router.post('/parents/:parentId/link-student',
+  authenticate,
+  requireRole(['hr', 'principal', 'school_director', 'admin']),
+  HRController.linkParentStudent
+);
+
+router.delete('/parents/:parentId/unlink-student/:studentId',
+  authenticate,
+  requireRole(['hr', 'principal', 'school_director', 'admin']),
+  HRController.unlinkParentStudent
+);
+
 // Contract Management
 router.get('/staff/contracts', 
   authenticate, 
@@ -136,13 +182,13 @@ router.post('/recruitment/requests',
 
 router.put('/recruitment/requests/:requestId/approve', 
   authenticate, 
-  requireRole(['principal', 'school_director', 'admin']), 
+  requireRole(['school_director']), 
   HRController.approveRecruitmentRequest
 );
 
 router.put('/recruitment/requests/:requestId/reject', 
   authenticate, 
-  requireRole(['principal', 'school_director', 'admin']), 
+  requireRole(['school_director']), 
   HRController.rejectRecruitmentRequest
 );
 

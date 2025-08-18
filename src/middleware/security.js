@@ -215,18 +215,45 @@ const checkMaintenanceMode = async (req, res, next) => {
       return next();
     }
     
-    // TODO: This will be implemented when we have database models
-    // For now, check environment variable
-    const maintenanceMode = process.env.MAINTENANCE_MODE === 'true';
-    
+    // Check DB maintenance table first; fallback to env var
+    let maintenanceMode = false;
+    try {
+      const { query } = require('../config/database');
+      const result = await query(`
+        SELECT *
+        FROM maintenance_mode
+        WHERE is_active = true
+        ORDER BY scheduled_start DESC
+        LIMIT 1
+      `);
+      if (result.rows.length > 0) {
+        maintenanceMode = true;
+        const allowedIps = Array.isArray(result.rows[0].allowed_ips) ? result.rows[0].allowed_ips : [];
+        const ip = req.ip || req.connection?.remoteAddress || '';
+        if (allowedIps.includes(ip)) {
+          return next();
+        }
+        // Attach details for downstream handlers if needed
+        req.__maintenance = {
+          message: result.rows[0].message || null,
+          estimated_end_time: result.rows[0].scheduled_end || null
+        };
+      } else {
+        maintenanceMode = process.env.MAINTENANCE_MODE === 'true';
+      }
+    } catch {
+      maintenanceMode = process.env.MAINTENANCE_MODE === 'true';
+    }
+
     if (maintenanceMode) {
       return res.status(503).json({
         success: false,
         error: {
           code: 'MAINTENANCE_MODE',
-          message: 'System is currently under maintenance. Please try again later.'
+          message: (req.__maintenance?.message) || 'System is currently under maintenance. Please try again later.'
         },
-        maintenance: true
+        maintenance: true,
+        estimated_end_time: req.__maintenance?.estimated_end_time || null
       });
     }
     

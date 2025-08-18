@@ -1,11 +1,9 @@
 const express = require('express');
 const router = express.Router();
-const { authenticate, requireRole, requireUserType } = require('../../middleware/auth');
+const { requireRole } = require('../../middleware/auth');
 const PlatformAnalyticsController = require('../../controllers/admin/platformAnalyticsController');
 
-// Apply admin authentication to all routes
-router.use(authenticate);
-router.use(requireUserType('platform_admin'));
+// Note: Authentication and admin dashboard access are enforced at mount in routes/index.js
 
 // =============================================================================
 // PLATFORM OVERVIEW ROUTES
@@ -17,7 +15,7 @@ router.use(requireUserType('platform_admin'));
  * @access  Private (Platform Admin)
  */
 router.get('/overview',
-  requireRole(['super_admin', 'regional_admin', 'admin_finance']),
+  requireRole(['super_admin', 'regional_admin', 'admin_finance', 'support_hr']),
   PlatformAnalyticsController.getPlatformOverview
 );
 
@@ -162,6 +160,49 @@ router.get('/revenue/summary',
       next(error);
     }
   }
+);
+
+// =============================================================================
+// PLATFORM FINANCE MODULE ROUTES
+// =============================================================================
+
+// 1) School Financial Dashboard
+router.get('/finance/schools',
+  requireRole(['super_admin', 'admin_finance']),
+  PlatformAnalyticsController.getSchoolFinanceDashboard
+);
+
+// 2) M-Pesa Revenue Analytics
+router.get('/finance/mpesa/overview',
+  requireRole(['super_admin', 'admin_finance']),
+  PlatformAnalyticsController.getMpesaOverview
+);
+
+router.get('/finance/mpesa/performance',
+  requireRole(['super_admin', 'admin_finance']),
+  PlatformAnalyticsController.getMpesaPerformance
+);
+
+router.get('/finance/mpesa/reconciliation',
+  requireRole(['super_admin', 'admin_finance']),
+  PlatformAnalyticsController.getMpesaReconciliation
+);
+
+// 3) Segments & Reporting
+router.get('/finance/segments',
+  requireRole(['super_admin', 'admin_finance']),
+  PlatformAnalyticsController.getFinanceSegments
+);
+
+// 4) Collections & Credit Management
+router.get('/finance/collections',
+  requireRole(['super_admin', 'admin_finance']),
+  PlatformAnalyticsController.getCollectionsOverview
+);
+
+router.get('/finance/clv-by-category',
+  requireRole(['super_admin', 'admin_finance']),
+  PlatformAnalyticsController.getClvByCategory
 );
 
 // =============================================================================

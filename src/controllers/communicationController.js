@@ -2,6 +2,29 @@ const { ValidationError, NotFoundError, ConflictError, DatabaseError } = require
 const { query } = require('../config/database');
 
 class CommunicationController {
+  // List eligible messaging users for the current school (exclude directors)
+  static async getMessagingUsers(req, res, next) {
+    try {
+      const result = await query(`
+        SELECT 
+          u.id,
+          u.first_name,
+          u.last_name,
+          u.email,
+          u.role
+        FROM users u
+        WHERE u.school_id = $1
+          AND u.role IN ('principal','teacher','hr','finance','parent')
+          AND COALESCE(u.is_active, true) = true
+        ORDER BY u.first_name, u.last_name
+      `, [req.user.schoolId || req.user.school_id]);
+
+      // Optionally filter out the requester from recipients list on frontend, but keep all here
+      res.json({ success: true, data: result.rows });
+    } catch (error) {
+      next(error);
+    }
+  }
   // Conversations API (threads)
   static async getConversations(req, res, next) {
     try {
@@ -857,39 +880,72 @@ class CommunicationController {
   // Helper method to notify target audience
   static async notifyTargetAudience(announcement) {
     try {
-      // Get users based on target audience
-      let sql = `
-        SELECT u.id, u.email, u.phone_number
+      // Determine audience filter
+      // Special audience: dashboard users (users with school dashboard access)
+      const dashboardRoles = [
+        'school_director',
+        'principal',
+        'teacher',
+        'hr',
+        'finance'
+      ];
+
+      let usersSql = `
+        SELECT u.id
         FROM users u
         WHERE u.school_id = $1
       `;
-      
-      const params = [announcement.school_id];
+      const usersParams = [announcement.school_id];
 
-      if (announcement.target_audience !== 'all') {
-        sql += ` AND u.role = $2`;
-        params.push(announcement.target_audience);
+      if (announcement.target_audience && announcement.target_audience !== 'all') {
+        if (announcement.target_audience === 'dashboard_users') {
+          usersSql += ` AND u.role = ANY($2)`;
+          usersParams.push(dashboardRoles);
+        } else {
+          usersSql += ` AND u.role = $2`;
+          usersParams.push(announcement.target_audience);
+        }
       }
 
-      const usersResult = await query(sql, params);
+      const usersResult = await query(usersSql, usersParams);
 
-      // Create notifications for each user
-      for (const user of usersResult.rows) {
-        await query(`
-          INSERT INTO notifications (
-            school_id, title, content, type, priority,
-            created_by, created_at
-          ) VALUES ($1, $2, $3, 'announcement', $4, $5, NOW())
-        `, [
-          announcement.school_id,
-          announcement.title,
-          announcement.content,
-          announcement.priority,
-          announcement.created_by
-        ]);
+      // If no recipients, nothing to do
+      if (usersResult.rows.length === 0) {
+        console.warn('notifyTargetAudience: no recipients found for announcement');
+        return;
       }
 
-      console.log(`Announcement notifications sent to ${usersResult.rows.length} users`);
+      // Create a single notification and recipient rows for all users
+      const notificationInsert = await query(`
+        INSERT INTO notifications (
+          school_id, title, message, type, priority,
+          created_by, created_at
+        ) VALUES ($1, $2, $3, 'announcement', $4, $5, NOW())
+        RETURNING id
+      `, [
+        announcement.school_id,
+        announcement.title,
+        // The column is "message" in some schemas; fallback to content
+        announcement.content || announcement.message || '',
+        announcement.priority || 'normal',
+        announcement.created_by || null,
+      ]);
+
+      const notificationId = notificationInsert.rows[0]?.id;
+
+      if (notificationId) {
+        for (const row of usersResult.rows) {
+          // eslint-disable-next-line no-await-in-loop
+          await query(`
+            INSERT INTO notification_recipients (
+              notification_id, recipient_id, status
+            ) VALUES ($1, $2, 'delivered')
+            ON CONFLICT DO NOTHING
+          `, [notificationId, row.id]);
+        }
+      }
+
+      console.log(`Announcement notification ${notificationId} sent to ${usersResult.rows.length} users`);
     } catch (error) {
       console.error('Error notifying target audience:', error);
     }

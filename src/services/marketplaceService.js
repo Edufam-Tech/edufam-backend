@@ -456,6 +456,63 @@ class MarketplaceService {
     return result.rows[0];
   }
 
+  async updateProduct(productId, requester, updates) {
+    // Ensure requester is admin or vendor contact for this product's vendor
+    const current = await query('SELECT vendor_id FROM marketplace_products WHERE id = $1', [productId]);
+    if (current.rows.length === 0) throw new NotFoundError('Product not found');
+    const vendorId = current.rows[0].vendor_id;
+
+    const isAdmin = requester?.role === 'super_admin' || requester?.role === 'edufam_admin';
+    if (!isAdmin) {
+      const vendorRes = await query('SELECT contact_person_id FROM marketplace_vendors WHERE id = $1', [vendorId]);
+      if (vendorRes.rows.length === 0 || vendorRes.rows[0].contact_person_id !== requester.userId) {
+        throw new ValidationError('Not authorized to update this product');
+      }
+    }
+
+    const allowed = [
+      'product_name','product_code','product_type','short_description','full_description','specifications','price','currency',
+      'discount_percentage','cost_price','minimum_order_quantity','maximum_order_quantity','stock_quantity','low_stock_threshold',
+      'is_digital','digital_file_url','digital_file_size_mb','subscription_duration_months','trial_period_days','weight_kg',
+      'dimensions','shipping_required','shipping_cost','free_shipping_threshold','tags','target_audience','age_group','curriculum_compatibility',
+      'grade_levels','subjects','product_images','product_videos','product_documents','seo_keywords','meta_description','promotion_text','status'
+    ];
+    const setFragments = [];
+    const params = [productId];
+    let i = 1;
+    for (const key of allowed) {
+      if (Object.prototype.hasOwnProperty.call(updates, camelToSnake(key))) {
+        const val = updates[camelToSnake(key)];
+        setFragments.push(`${key} = $${++i}`);
+        params.push(needsJson(key) ? JSON.stringify(val) : val);
+      }
+    }
+    if (setFragments.length === 0) return (await this.getProductById(productId));
+
+    const result = await query(`
+      UPDATE marketplace_products SET ${setFragments.join(', ')}, updated_at = NOW() WHERE id = $1 RETURNING *
+    `, params);
+    return result.rows[0];
+  }
+
+  async deleteProduct(productId, requester) {
+    const current = await query('SELECT vendor_id FROM marketplace_products WHERE id = $1', [productId]);
+    if (current.rows.length === 0) throw new NotFoundError('Product not found');
+    const vendorId = current.rows[0].vendor_id;
+
+    const isAdmin = requester?.role === 'super_admin' || requester?.role === 'edufam_admin';
+    if (!isAdmin) {
+      const vendorRes = await query('SELECT contact_person_id FROM marketplace_vendors WHERE id = $1', [vendorId]);
+      if (vendorRes.rows.length === 0 || vendorRes.rows[0].contact_person_id !== requester.userId) {
+        throw new ValidationError('Not authorized to delete this product');
+      }
+    }
+    await query('DELETE FROM marketplace_products WHERE id = $1', [productId]);
+    return true;
+  }
+
+// keep class open to include cart/order/review methods below
+
   /**
    * Shopping Cart Management
    */
@@ -697,6 +754,101 @@ class MarketplaceService {
     await this.clearCart(customerId);
 
     return createdOrders;
+  }
+
+  async getOrders({ requester, status, vendorId, page = 1, limit = 20 } = {}) {
+    let whereConditions = [];
+    let params = [];
+    let paramCount = 0;
+
+    // Access control: customers see their orders; vendors see vendor orders; admins see all
+    if (requester?.role === 'super_admin' || requester?.role === 'edufam_admin') {
+      // no restriction
+    } else if (vendorId) {
+      whereConditions.push(`vendor_id = $${++paramCount}`);
+      params.push(vendorId);
+    } else {
+      whereConditions.push(`customer_id = $${++paramCount}`);
+      params.push(requester.userId);
+    }
+
+    if (status) {
+      whereConditions.push(`order_status = $${++paramCount}`);
+      params.push(status);
+    }
+
+    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+    const offset = (page - 1) * limit;
+    params.push(limit, offset);
+
+    const result = await query(`
+      SELECT o.*,
+             v.vendor_name,
+             (SELECT json_agg(oi) FROM marketplace_order_items oi WHERE oi.order_id = o.id) AS items
+      FROM marketplace_orders o
+      LEFT JOIN marketplace_vendors v ON o.vendor_id = v.id
+      ${whereClause}
+      ORDER BY o.order_date DESC
+      LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}
+    `, params);
+
+    return result.rows;
+  }
+
+  async getOrderById(orderId, requester) {
+    const result = await query(`
+      SELECT o.*,
+             v.vendor_name,
+             (SELECT json_agg(oi) FROM marketplace_order_items oi WHERE oi.order_id = o.id) AS items
+      FROM marketplace_orders o
+      LEFT JOIN marketplace_vendors v ON o.vendor_id = v.id
+      WHERE o.id = $1
+    `, [orderId]);
+
+    if (result.rows.length === 0) {
+      throw new NotFoundError('Order not found');
+    }
+
+    const order = result.rows[0];
+    // Access: allow customer, vendor contact, or admin
+    const isAdmin = requester?.role === 'super_admin' || requester?.role === 'edufam_admin';
+    if (!isAdmin && order.customer_id !== requester.userId) {
+      // check vendor contact
+      const vendorRes = await query('SELECT contact_person_id FROM marketplace_vendors WHERE id = $1', [order.vendor_id]);
+      if (vendorRes.rows.length === 0 || vendorRes.rows[0].contact_person_id !== requester.userId) {
+        throw new ValidationError('Not authorized to view this order');
+      }
+    }
+    return order;
+  }
+
+  async updateOrderStatus(orderId, requester, { orderStatus, shippingStatus, trackingNumber, shippingCarrier, estimatedDeliveryDate }) {
+    // Only admins or vendor contact for the order's vendor can update
+    const currentRes = await query('SELECT vendor_id FROM marketplace_orders WHERE id = $1', [orderId]);
+    if (currentRes.rows.length === 0) throw new NotFoundError('Order not found');
+    const vendorId = currentRes.rows[0].vendor_id;
+
+    const isAdmin = requester?.role === 'super_admin' || requester?.role === 'edufam_admin';
+    if (!isAdmin) {
+      const vendorRes = await query('SELECT contact_person_id FROM marketplace_vendors WHERE id = $1', [vendorId]);
+      if (vendorRes.rows.length === 0 || vendorRes.rows[0].contact_person_id !== requester.userId) {
+        throw new ValidationError('Not authorized to update this order');
+      }
+    }
+
+    const result = await query(`
+      UPDATE marketplace_orders
+      SET order_status = COALESCE($2, order_status),
+          shipping_status = COALESCE($3, shipping_status),
+          tracking_number = COALESCE($4, tracking_number),
+          shipping_carrier = COALESCE($5, shipping_carrier),
+          estimated_delivery_date = COALESCE($6::date, estimated_delivery_date),
+          updated_at = NOW()
+      WHERE id = $1
+      RETURNING *
+    `, [orderId, orderStatus, shippingStatus, trackingNumber, shippingCarrier, estimatedDeliveryDate]);
+
+    return result.rows[0];
   }
 
   async generateOrderNumber() {

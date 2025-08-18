@@ -358,6 +358,53 @@ class AdminHrService {
     }
   }
 
+  // Get leave requests list
+  async getLeaves({ status, page = 1, limit = 50 } = {}) {
+    try {
+      const safeLimit = Math.min(parseInt(limit) || 50, 200);
+      const offset = ((parseInt(page) || 1) - 1) * safeLimit;
+      const where = [];
+      const params = [];
+      let i = 0;
+      if (status) {
+        params.push(status);
+        where.push(`l.status = $${++i}`);
+      }
+      const whereClause = where.length ? `WHERE ${where.join(' AND ')}` : '';
+      const result = await query(`
+        SELECT l.*, 
+               e.employee_id, e.job_title,
+               u.first_name, u.last_name
+        FROM admin_employee_leaves l
+        JOIN admin_employees e ON e.id = l.employee_id
+        JOIN users u ON u.id = e.user_id
+        ${whereClause}
+        ORDER BY l.created_at DESC
+        LIMIT $${i + 1} OFFSET $${i + 2}
+      `, [...params, safeLimit, offset]);
+      return result.rows;
+    } catch (error) {
+      throw new DatabaseError('Failed to get leave requests', error);
+    }
+  }
+
+  // Get company assets list
+  async getAssets({ page = 1, limit = 50 } = {}) {
+    try {
+      const safeLimit = Math.min(parseInt(limit) || 50, 200);
+      const offset = ((parseInt(page) || 1) - 1) * safeLimit;
+      const result = await query(`
+        SELECT *
+        FROM admin_company_assets
+        ORDER BY created_at DESC
+        LIMIT $1 OFFSET $2
+      `, [safeLimit, offset]);
+      return result.rows;
+    } catch (error) {
+      throw new DatabaseError('Failed to get assets', error);
+    }
+  }
+
   /**
    * Performance Reviews
    */

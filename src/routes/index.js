@@ -59,17 +59,20 @@ const platformAnalyticsRoutes = require('./admin/platformAnalytics');
 const adminHrRoutes = require('./admin/hr');
 const adminTripRoutes = require('./admin/trips');
 const adminUserRoutes = require('./admin/adminUsers');
+const adminCrmRoutes = require('./admin/crm');
 const systemConfigRoutes = require('./admin/systemConfig');
 const regionalRoutes = require('./admin/regional');
 const monitoringRoutes = require('./admin/monitoring');
 const dataMigrationRoutes = require('./admin/dataMigration');
 const integrationRoutes = require('./admin/integrations');
 const adminComplianceRoutes = require('./admin/compliance');
+const adminCommunicationRoutes = require('./admin/communication');
 const adminSupportRoutes = require('./admin/support');
 
 
 
 const router = express.Router();
+const { checkMaintenanceMode } = require('../middleware/security');
 
 // API version and info
 router.get('/', (req, res) => {
@@ -106,6 +109,7 @@ router.get('/', (req, res) => {
       adminConfig: '/api/admin/config',
       adminRegional: '/api/admin/regional',
       adminMonitoring: '/api/admin/monitoring',
+      adminCommunication: '/api/admin/communication',
       adminMigration: '/api/admin/migration',
       adminIntegrations: '/api/admin/integrations',
       adminCompliance: '/api/admin/compliance',
@@ -245,6 +249,53 @@ router.get('/public/job-postings', async (req, res) => {
   }
 });
 
+// Public job application submission (for ATS intake)
+router.post('/public/job-applications', async (req, res) => {
+  try {
+    const { query } = require('../config/database');
+    const {
+      job_posting_id,
+      applicant_name,
+      applicant_email,
+      applicant_phone,
+      resume_url,
+      cover_letter
+    } = req.body || {};
+
+    if (!job_posting_id || !applicant_name || !applicant_email) {
+      return res.status(400).json({ success: false, message: 'Missing required fields' });
+    }
+
+    // Derive school_id from job_posting
+    const posting = await query('SELECT id, school_id FROM job_postings WHERE id = $1 AND status = $2', [job_posting_id, 'active']);
+    if (posting.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Job posting not found or not active' });
+    }
+
+    const insert = await query(`
+      INSERT INTO job_applications (
+        school_id, job_posting_id, applicant_name, applicant_email, applicant_phone,
+        resume_url, cover_letter, application_status
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, 'submitted')
+      RETURNING *
+    `, [
+      posting.rows[0].school_id,
+      job_posting_id,
+      applicant_name,
+      applicant_email,
+      applicant_phone || null,
+      resume_url || null,
+      cover_letter || null,
+    ]);
+
+    res.status(201).json({ success: true, data: insert.rows[0], message: 'Application submitted' });
+  } catch (error) {
+    console.error('Error submitting public job application:', error);
+    res.status(500).json({ success: false, error: 'Failed to submit application', message: error.message });
+  }
+});
+
 router.get('/health', (req, res) => {
   res.json({ 
     status: 'healthy', 
@@ -265,6 +316,8 @@ router.get('/health', (req, res) => {
  */
 
 // Core school routes with authentication
+// Enforce maintenance mode for school app APIs
+router.use(checkMaintenanceMode);
 router.use('/users', schoolAuth, userRoutes);
 router.use('/upload', schoolAuth, uploadRoutes);
 router.use('/schools', schoolAuth, schoolRoutesOld);
@@ -346,6 +399,7 @@ router.use('/admin/subscriptions', adminAuth, subscriptionRoutes);
 router.use('/admin/analytics', adminAuth, platformAnalyticsRoutes);
 router.use('/admin/hr', adminAuth, adminHrRoutes);
 router.use('/admin/trips', adminAuth, adminTripRoutes);
+router.use('/admin/crm', adminAuth, adminCrmRoutes);
 router.use('/admin/users', adminAuth, adminUserRoutes);
 router.use('/admin/config', adminAuth, systemConfigRoutes);
 router.use('/admin/regional', adminAuth, regionalRoutes);
@@ -354,6 +408,11 @@ router.use('/admin/migration', adminAuth, dataMigrationRoutes);
 router.use('/admin/integrations', adminAuth, integrationRoutes);
 router.use('/admin/compliance', adminAuth, adminComplianceRoutes);
 router.use('/admin/support', adminAuth, adminSupportRoutes);
+router.use('/admin/communication', adminAuth, adminCommunicationRoutes);
+// Expose marketplace to admin app as well
+router.use('/admin/marketplace', adminAuth, marketplaceRoutes);
+// Allow admin app to use upload endpoints too
+router.use('/admin/upload', adminAuth, uploadRoutes);
 
 /**
  * ===========================

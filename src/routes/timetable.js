@@ -75,6 +75,26 @@ router.get('/versions',
   TimetableController.getVersions
 );
 
+/**
+ * @route   GET /api/timetable/versions/:versionId/entries
+ * @desc    Get all timetable entries for a specific version
+ * @access  Private (All school staff)
+ */
+router.get('/versions/:versionId/entries',
+  async (req, res, next) => {
+    try {
+      const { versionId } = req.params;
+      if (!versionId) {
+        throw new ValidationError('Version ID is required');
+      }
+      const data = await TimetableController.getVersionEntries(versionId, req.user.schoolId);
+      res.json({ success: true, data });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
 // =============================================================================
 // CONSTRAINT MANAGEMENT ROUTES
 // =============================================================================
@@ -175,6 +195,85 @@ router.get('/today',
 router.get('/analytics',
   requireRole(['principal', 'school_director', 'academic_coordinator']),
   TimetableController.getAnalytics
+);
+
+// =============================================================================
+// DISTRIBUTION AND EXPORT ROUTES (Minimal implementation)
+// =============================================================================
+
+/**
+ * @route   POST /api/timetable/distribute
+ * @desc    Distribute a timetable version to stakeholders
+ * @access  Private (Principal, School Director)
+ */
+router.post('/distribute',
+  requireRole(['principal', 'school_director']),
+  async (req, res, next) => {
+    try {
+      const result = await TimetableController.distributeTimetable(req, res);
+      return result; // controller handles response
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * @route   GET /api/timetable/teacher/:teacherId
+ * @desc    Get a teacher's personal schedule from published timetable
+ * @access  Private (All school staff)
+ */
+router.get('/teacher/:teacherId',
+  async (req, res, next) => {
+    try {
+      const data = await TimetableController.getTeacherSchedule(req.params.teacherId, req.user.schoolId);
+      res.json({ success: true, data });
+    } catch (error) { next(error); }
+  }
+);
+
+/**
+ * @route   GET /api/timetable/parent/:studentId
+ * @desc    Get a student's class timetable for parents
+ * @access  Private (Parents and school staff)
+ */
+router.get('/parent/:studentId',
+  async (req, res, next) => {
+    try {
+      const data = await TimetableController.getStudentClassTimetable(req.params.studentId, req.user.schoolId);
+      res.json({ success: true, data });
+    } catch (error) { next(error); }
+  }
+);
+
+/**
+ * @route   POST /api/timetable/export-pdf
+ * @desc    Generate a branded PDF for a timetable
+ * @access  Private (Principal, School Director)
+ */
+router.post('/export-pdf',
+  requireRole(['principal', 'school_director']),
+  async (req, res, next) => {
+    try {
+      const data = await TimetableController.exportPdf(req.body, req.user.schoolId);
+      res.json({ success: true, data });
+    } catch (error) { next(error); }
+  }
+);
+
+/**
+ * @route   POST /api/timetable/notify-stakeholders
+ * @desc    Notify teachers and parents about timetable updates
+ * @access  Private (Principal, School Director)
+ */
+router.post('/notify-stakeholders',
+  requireRole(['principal', 'school_director']),
+  async (req, res, next) => {
+    try {
+      const data = await TimetableController.notifyStakeholders(req.body, req.user.schoolId, req.user.userId);
+      res.json({ success: true, data });
+    } catch (error) { next(error); }
+  }
 );
 
 // =============================================================================

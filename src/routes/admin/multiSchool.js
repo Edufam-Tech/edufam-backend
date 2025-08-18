@@ -1,11 +1,9 @@
 const express = require('express');
 const router = express.Router();
-const { authenticate, requireRole, requireUserType } = require('../../middleware/auth');
+const { requireRole } = require('../../middleware/auth');
 const MultiSchoolController = require('../../controllers/admin/multiSchoolController');
 
-// Apply admin authentication to all routes
-router.use(authenticate);
-router.use(requireUserType('platform_admin'));
+// Admin authentication is applied at router.mount in routes/index.js via adminAuth
 
 // =============================================================================
 // SCHOOL ONBOARDING ROUTES
@@ -71,7 +69,7 @@ router.post('/onboarding/:id/complete',
  * @access  Private (Platform Admin)
  */
 router.get('/schools',
-  requireRole(['super_admin', 'regional_admin', 'support_admin']),
+  requireRole(['super_admin', 'regional_admin', 'support_admin', 'support_hr']),
   MultiSchoolController.getAllSchools
 );
 
@@ -81,7 +79,7 @@ router.get('/schools',
  * @access  Private (Platform Admin)
  */
 router.get('/schools/:id',
-  requireRole(['super_admin', 'regional_admin', 'support_admin']),
+  requireRole(['super_admin', 'regional_admin', 'support_admin', 'support_hr']),
   MultiSchoolController.getSchoolDetails
 );
 
@@ -91,7 +89,7 @@ router.get('/schools/:id',
  * @access  Private (Super Admin, Regional Admin)
  */
 router.put('/schools/:id/suspend',
-  requireRole(['super_admin', 'regional_admin']),
+  requireRole(['super_admin', 'regional_admin', 'support_hr']),
   MultiSchoolController.suspendSchool
 );
 
@@ -101,7 +99,7 @@ router.put('/schools/:id/suspend',
  * @access  Private (Super Admin, Regional Admin)
  */
 router.put('/schools/:id/reactivate',
-  requireRole(['super_admin', 'regional_admin']),
+  requireRole(['super_admin', 'regional_admin', 'support_hr']),
   MultiSchoolController.reactivateSchool
 );
 
@@ -111,7 +109,7 @@ router.put('/schools/:id/reactivate',
  * @access  Private (Platform Admin)
  */
 router.get('/schools/:id/users',
-  requireRole(['super_admin', 'regional_admin', 'support_admin']),
+  requireRole(['super_admin', 'regional_admin', 'support_admin', 'support_hr']),
   async (req, res, next) => {
     try {
       const { query } = require('../../config/database');
@@ -159,12 +157,91 @@ router.get('/schools/:id/users',
 );
 
 /**
+ * @route   GET /api/admin/multi-school/users
+ * @desc    Get all school users across all schools with filtering and pagination
+ * @access  Private (Platform Admin)
+ */
+router.get('/users',
+  requireRole(['super_admin', 'regional_admin', 'support_admin', 'support_hr']),
+  async (req, res, next) => {
+    try {
+      const { query } = require('../../config/database');
+      const {
+        role,
+        activationStatus,
+        isActive,
+        search,
+        limit = 50,
+        offset = 0,
+      } = req.query;
+
+      let whereClause = "WHERE u.user_type = 'school_user'";
+      const params = [];
+
+      if (role) {
+        whereClause += ` AND u.role = $${params.length + 1}`;
+        params.push(role);
+      }
+
+      if (activationStatus) {
+        whereClause += ` AND u.activation_status = $${params.length + 1}`;
+        params.push(activationStatus);
+      }
+
+      if (typeof isActive !== 'undefined') {
+        whereClause += ` AND u.is_active = $${params.length + 1}`;
+        params.push(String(isActive) === 'true');
+      }
+
+      if (search) {
+        whereClause += ` AND (u.first_name ILIKE $${params.length + 1} OR u.last_name ILIKE $${params.length + 1} OR u.email ILIKE $${params.length + 1})`;
+        params.push(`%${search}%`);
+      }
+
+      const result = await query(`
+        SELECT 
+          u.id,
+          u.first_name,
+          u.last_name,
+          u.email,
+          u.phone,
+          u.user_type,
+          u.role,
+          u.is_active,
+          u.activation_status,
+          u.last_login_at,
+          u.created_at,
+          s.id as school_id,
+          s.name as school_name
+        FROM users u
+        JOIN schools s ON u.school_id = s.id
+        ${whereClause}
+        ORDER BY u.created_at DESC
+        LIMIT $${params.length + 1} OFFSET $${params.length + 2}
+      `, [...params, parseInt(limit, 10), parseInt(offset, 10)]);
+
+      res.json({
+        success: true,
+        data: result.rows,
+        pagination: {
+          limit: parseInt(limit, 10),
+          offset: parseInt(offset, 10),
+          total: result.rows.length,
+        },
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
  * @route   GET /api/admin/multi-school/schools/:id/metrics
  * @desc    Get key metrics for a specific school
  * @access  Private (Platform Admin)
  */
 router.get('/schools/:id/metrics',
-  requireRole(['super_admin', 'regional_admin', 'support_admin']),
+  requireRole(['super_admin', 'regional_admin', 'support_admin', 'support_hr']),
   async (req, res, next) => {
     try {
       const { query } = require('../../config/database');
@@ -270,7 +347,7 @@ router.put('/oversight/:id',
  * @access  Private (Platform Admin)
  */
 router.get('/oversight/dashboard',
-  requireRole(['super_admin', 'regional_admin', 'compliance_admin']),
+  requireRole(['super_admin', 'regional_admin', 'compliance_admin', 'support_hr']),
   async (req, res, next) => {
     try {
       const { query } = require('../../config/database');

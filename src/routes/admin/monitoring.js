@@ -22,6 +22,16 @@ router.get('/health',
 );
 
 /**
+ * @route   GET /api/admin/monitoring/infrastructure
+ * @desc    Infrastructure dashboard (servers, DB, APIs, storage, M-Pesa KPIs)
+ * @access  Private (Platform Admin)
+ */
+router.get('/infrastructure',
+  requireRole(['super_admin', 'support_admin', 'regional_admin']),
+  MonitoringController.getInfrastructureDashboard
+);
+
+/**
  * @route   POST /api/admin/monitoring/health/check
  * @desc    Perform comprehensive health check
  * @access  Private (Super Admin, Support Admin)
@@ -134,6 +144,26 @@ router.get('/performance/real-time',
       next(error);
     }
   }
+);
+
+/**
+ * @route   GET /api/admin/monitoring/schools/:schoolId
+ * @desc    Per-school monitoring metrics (usage, storage, M-Pesa, errors)
+ * @access  Private (Platform Admin)
+ */
+router.get('/schools/:schoolId',
+  requireRole(['super_admin', 'support_admin', 'regional_admin']),
+  MonitoringController.getSchoolMonitoring
+);
+
+/**
+ * @route   GET /api/admin/monitoring/mpesa/health
+ * @desc    M-Pesa health and performance overview
+ * @access  Private (Platform Admin)
+ */
+router.get('/mpesa/health',
+  requireRole(['super_admin', 'support_admin', 'regional_admin']),
+  MonitoringController.getMpesaHealth
 );
 
 // =============================================================================
@@ -442,14 +472,14 @@ router.get('/uptime/status-page',
           LIMIT 5
         `),
 
-        // Planned maintenance
+        // Planned maintenance (align with maintenance_mode schema)
         query(`
           SELECT 
-            id, message, start_time, estimated_end_time, maintenance_type
+            id, message, scheduled_start, scheduled_end
           FROM maintenance_mode
-          WHERE start_time >= CURRENT_TIMESTAMP
-            OR (is_active = true AND estimated_end_time > CURRENT_TIMESTAMP)
-          ORDER BY start_time
+          WHERE scheduled_start >= CURRENT_TIMESTAMP
+            OR (is_active = true AND scheduled_end > CURRENT_TIMESTAMP)
+          ORDER BY scheduled_start
         `)
       ]);
 
@@ -472,6 +502,158 @@ router.get('/uptime/status-page',
     } catch (error) {
       next(error);
     }
+  }
+);
+
+// =============================================================================
+// INCIDENT MANAGEMENT ROUTES
+// =============================================================================
+
+/**
+ * @route   GET /api/admin/monitoring/incidents
+ * @desc    List incidents with filters
+ * @access  Private (Platform Admin)
+ */
+router.get('/incidents',
+  requireRole(['super_admin', 'support_admin', 'regional_admin']),
+  async (req, res, next) => {
+    try {
+      const { query } = require('../../config/database');
+      const { status, severity, schoolId, limit = 50, offset = 0 } = req.query;
+
+      let where = 'WHERE 1=1';
+      const params = [];
+      if (status) { where += ` AND status = $${params.length + 1}`; params.push(status); }
+      if (severity) { where += ` AND severity = $${params.length + 1}`; params.push(severity); }
+      if (schoolId) {
+        where += ` AND id IN (SELECT incident_id FROM incident_school_impacts WHERE school_id = $${params.length + 1})`;
+        params.push(schoolId);
+      }
+
+      const result = await query(`
+        SELECT * FROM system_incidents
+        ${where}
+        ORDER BY detected_at DESC
+        LIMIT $${params.length + 1} OFFSET $${params.length + 2}
+      `, [...params, limit, offset]);
+
+      res.json({ success: true, data: result.rows });
+    } catch (error) { next(error); }
+  }
+);
+
+/**
+ * @route   POST /api/admin/monitoring/incidents
+ * @desc    Create a new incident
+ * @access  Private (Super Admin, Support Admin)
+ */
+router.post('/incidents',
+  requireRole(['super_admin', 'support_admin']),
+  async (req, res, next) => {
+    try {
+      const { query } = require('../../config/database');
+      const { title, description, severity = 'medium', impacts = [] } = req.body;
+      if (!title) throw new (require('../../middleware/errorHandler').ValidationError)('Title is required');
+
+      const number = `INC-${Date.now()}`;
+      const inc = await query(`
+        INSERT INTO system_incidents (incident_number, title, description, severity, created_by, created_by_name)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING *
+      `, [number, title, description || null, severity, req.user.userId, `${req.user.firstName} ${req.user.lastName}`]);
+
+      const incident = inc.rows[0];
+      for (const imp of (impacts || [])) {
+        await query(`
+          INSERT INTO incident_school_impacts (incident_id, school_id, impact_level, downtime_minutes, estimated_financial_impact, notes)
+          VALUES ($1, $2, $3, $4, $5, $6)
+        `, [incident.id, imp.schoolId, imp.impactLevel || 'minor', imp.downtimeMinutes || 0, imp.financialImpact || 0, imp.notes || null]);
+      }
+
+      await query(`
+        INSERT INTO incident_events (incident_id, event_type, details, created_by, created_by_name)
+        VALUES ($1, 'created', $2, $3, $4)
+      `, [incident.id, JSON.stringify({ severity }), req.user.userId, `${req.user.firstName} ${req.user.lastName}`]);
+
+      res.status(201).json({ success: true, data: incident });
+    } catch (error) { next(error); }
+  }
+);
+
+/**
+ * @route   POST /api/admin/monitoring/incidents/:id/update
+ * @desc    Add timeline event / change status
+ * @access  Private (Super Admin, Support Admin)
+ */
+router.post('/incidents/:id/update',
+  requireRole(['super_admin', 'support_admin']),
+  async (req, res, next) => {
+    try {
+      const { query } = require('../../config/database');
+      const { id } = req.params;
+      const { status, eventType = 'update', details = {} } = req.body;
+
+      if (status) {
+        await query(`
+          UPDATE system_incidents SET status = $1 WHERE id = $2
+        `, [status, id]);
+      }
+
+      const ev = await query(`
+        INSERT INTO incident_events (incident_id, event_type, details, created_by, created_by_name)
+        VALUES ($1, $2, $3, $4, $5)
+        RETURNING *
+      `, [id, eventType, JSON.stringify(details), req.user.userId, `${req.user.firstName} ${req.user.lastName}`]);
+
+      res.json({ success: true, data: ev.rows[0] });
+    } catch (error) { next(error); }
+  }
+);
+
+/**
+ * @route   POST /api/admin/monitoring/incidents/:id/resolve
+ * @desc    Resolve incident and optionally create post-mortem
+ * @access  Private (Super Admin)
+ */
+router.post('/incidents/:id/resolve',
+  requireRole(['super_admin']),
+  async (req, res, next) => {
+    try {
+      const { query } = require('../../config/database');
+      const { id } = req.params;
+      const { rootCause, postMortem } = req.body;
+
+      const upd = await query(`
+        UPDATE system_incidents
+        SET status = 'resolved', root_cause = $1, resolved_at = CURRENT_TIMESTAMP
+        WHERE id = $2
+        RETURNING *
+      `, [rootCause || null, id]);
+
+      if (postMortem) {
+        await query(`
+          INSERT INTO incident_post_mortems (
+            incident_id, summary, timeline, contributing_factors, corrective_actions, lessons_learned, created_by, created_by_name
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        `, [
+          id,
+          postMortem.summary || null,
+          JSON.stringify(postMortem.timeline || []),
+          JSON.stringify(postMortem.contributingFactors || []),
+          JSON.stringify(postMortem.correctiveActions || []),
+          JSON.stringify(postMortem.lessonsLearned || []),
+          req.user.userId,
+          `${req.user.firstName} ${req.user.lastName}`
+        ]);
+      }
+
+      await query(`
+        INSERT INTO incident_events (incident_id, event_type, details, created_by, created_by_name)
+        VALUES ($1, 'resolved', $2, $3, $4)
+      `, [id, JSON.stringify({ rootCause: rootCause || null }), req.user.userId, `${req.user.firstName} ${req.user.lastName}`]);
+
+      res.json({ success: true, data: upd.rows[0] });
+    } catch (error) { next(error); }
   }
 );
 

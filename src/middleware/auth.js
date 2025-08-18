@@ -81,16 +81,22 @@ const authenticate = async (req, res, next) => {
       throw new AuthenticationError('Account is temporarily locked');
     }
     
-    // Add user info to request
+    // Add user info to request (expose both camelCase and snake_case for compatibility)
     req.user = {
+      // IDs
+      id: user.id,
       userId: user.id,
+      // School context
+      school_id: user.school_id,
+      schoolId: user.school_id,
+      // Identity
       email: user.email,
       role: user.role,
       userType: user.user_type,
-      schoolId: user.school_id,
       firstName: user.first_name,
       lastName: user.last_name,
       profilePictureUrl: user.profile_picture_url,
+      // Status
       isActive: user.is_active,
       activationStatus: user.activation_status
     };

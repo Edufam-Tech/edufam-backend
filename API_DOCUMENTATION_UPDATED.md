@@ -136,6 +136,20 @@ http://localhost:5000/api/v1
 
 ### 📋 **NEWLY IMPLEMENTED CONTROLLER METHODS**
 
+### 🆘 Admin Support Module
+
+```http
+GET    /api/admin/support/tickets                 # List tickets (filters: status, priority, classification, schoolId, assignedTo, search, limit, offset)
+GET    /api/admin/support/tickets/:id             # Get ticket with messages and events
+POST   /api/admin/support/tickets                 # Create ticket { title, description?, priority?, requesterEmail, schoolId?, source?, classification? }
+PUT    /api/admin/support/tickets/:id/status      # Update status { status }
+PUT    /api/admin/support/tickets/:id/assign      # Assign ticket { adminId }
+POST   /api/admin/support/tickets/:id/messages    # Add message { body, channel?, direction?, attachments? }
+GET    /api/admin/support/kb                      # Search knowledge base (q, schoolType, mpesaRelated)
+GET    /api/admin/support/analytics               # Support analytics summary
+GET    /api/admin/support/schools/:schoolId/context # School context panel data
+```
+
 **The following comprehensive implementation details all the newly added methods across all controllers:**
 
 ---

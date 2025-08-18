@@ -224,6 +224,33 @@ router.get('/products/:productId', [
 ], validate, marketplaceController.getProduct);
 
 /**
+ * Update product
+ * PUT /api/v1/marketplace/products/:productId
+ */
+router.put('/products/:productId', [
+  requireRole(['super_admin', 'edufam_admin', 'school_admin', 'principal', 'teacher']),
+  param('productId').isUUID().withMessage('Valid product ID is required'),
+  body('productName').optional().isString().trim().isLength({ min: 1, max: 255 }),
+  body('productCode').optional().isString().trim().isLength({ min: 1, max: 50 }),
+  body('productType').optional().isIn(['physical', 'digital', 'service', 'subscription', 'course']),
+  body('price').optional().isFloat({ min: 0 }),
+  body('currency').optional().isLength({ min: 3, max: 3 }),
+  body('stockQuantity').optional().isInt({ min: 0 }),
+  body('shortDescription').optional().isString().trim(),
+  body('fullDescription').optional().isString().trim(),
+  body('productImages').optional().isObject(),
+], validate, marketplaceController.updateProduct);
+
+/**
+ * Delete product
+ * DELETE /api/v1/marketplace/products/:productId
+ */
+router.delete('/products/:productId', [
+  requireRole(['super_admin', 'edufam_admin', 'school_admin', 'principal', 'teacher']),
+  param('productId').isUUID().withMessage('Valid product ID is required'),
+], validate, marketplaceController.deleteProduct);
+
+/**
  * Update product approval
  * PUT /api/v1/marketplace/products/:productId/approval
  */
@@ -291,6 +318,38 @@ router.post('/orders', [
   body('customerNotes').optional().isString().trim().withMessage('Customer notes must be a string'),
   body('couponCode').optional().isString().trim().withMessage('Coupon code must be a string')
 ], validate, marketplaceController.createOrder);
+
+/**
+ * List orders
+ * GET /api/v1/marketplace/orders
+ */
+router.get('/orders', [
+  query('status').optional().isString().withMessage('Status must be a string'),
+  query('vendorId').optional().isUUID().withMessage('Vendor ID must be valid UUID'),
+  query('page').optional().isInt({ min: 1 }).withMessage('Page must be a positive integer'),
+  query('limit').optional().isInt({ min: 1, max: 100 }).withMessage('Limit must be between 1 and 100')
+], validate, marketplaceController.getOrders);
+
+/**
+ * Get order details
+ * GET /api/v1/marketplace/orders/:orderId
+ */
+router.get('/orders/:orderId', [
+  param('orderId').isUUID().withMessage('Valid order ID is required')
+], validate, marketplaceController.getOrderById);
+
+/**
+ * Update order status / shipping info
+ * PUT /api/v1/marketplace/orders/:orderId/status
+ */
+router.put('/orders/:orderId/status', [
+  param('orderId').isUUID().withMessage('Valid order ID is required'),
+  body('orderStatus').optional().isString().withMessage('Order status must be a string'),
+  body('shippingStatus').optional().isString().withMessage('Shipping status must be a string'),
+  body('trackingNumber').optional().isString().withMessage('Tracking number must be a string'),
+  body('shippingCarrier').optional().isString().withMessage('Shipping carrier must be a string'),
+  body('estimatedDeliveryDate').optional().isISO8601().withMessage('Estimated delivery date must be ISO date')
+], validate, marketplaceController.updateOrderStatus);
 
 // ====================================
 // REVIEW MANAGEMENT

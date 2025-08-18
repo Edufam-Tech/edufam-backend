@@ -949,6 +949,497 @@ class PlatformAnalyticsController {
       next(error);
     }
   }
+
+  // =============================================================================
+  // PLATFORM FINANCE MODULE: SCHOOL FINANCE DASHBOARD
+  // =============================================================================
+
+  // Get per-school financial overview including logos and health scoring
+  static async getSchoolFinanceDashboard(req, res, next) {
+    try {
+      const { period = '90d' } = req.query;
+
+      const dateFilter = period === '30d' ? '30 days' :
+                        period === '7d' ? '7 days' :
+                        period === '90d' ? '90 days' :
+                        period === '1y' ? '1 year' : '90 days';
+
+      const [schools, mpesaStats, subscriptionOutstanding, termRevenue] = await Promise.all([
+        query(`
+          SELECT 
+            s.id, s.name, COALESCE(s.logo_url, '') AS logo_url,
+            COALESCE(SUM(p.amount), 0) AS total_payments,
+            COUNT(p.*) AS payment_count
+          FROM schools s
+          LEFT JOIN payments p ON p.school_id = s.id 
+            AND p.created_at >= CURRENT_DATE - INTERVAL '${dateFilter}'
+          WHERE s.is_active = true
+          GROUP BY s.id
+          ORDER BY total_payments DESC
+        `),
+        query(`
+          SELECT 
+            p.school_id,
+            COUNT(mt.*) AS tx_count,
+            COUNT(CASE WHEN mt.result_code = '0' THEN 1 END) AS success_count,
+            COUNT(CASE WHEN mt.result_code <> '0' OR mt.result_code IS NULL THEN 1 END) AS fail_count,
+            SUM(p.amount) FILTER (WHERE p.channel = 'mpesa') AS mpesa_amount
+          FROM payments p
+          LEFT JOIN mpesa_transactions mt ON mt.payment_id = p.id
+          WHERE p.created_at >= CURRENT_DATE - INTERVAL '${dateFilter}'
+          GROUP BY p.school_id
+        `),
+        query(`
+          SELECT 
+            si.school_id,
+            SUM(si.balance_due) AS outstanding_balance,
+            AVG(CASE WHEN si.paid_at IS NOT NULL AND si.invoice_date IS NOT NULL 
+                THEN EXTRACT(DAYS FROM si.paid_at - si.invoice_date) END) AS avg_days_to_pay
+          FROM subscription_invoices si
+          WHERE si.invoice_date >= CURRENT_DATE - INTERVAL '${dateFilter}'
+          GROUP BY si.school_id
+        `),
+        query(`
+          SELECT 
+            s.id as school_id,
+            t.id as term_id,
+            t.name as term_name,
+            SUM(p.amount) as term_revenue
+          FROM schools s
+          JOIN academic_terms t ON t.school_id = s.id
+          LEFT JOIN payments p ON p.school_id = s.id 
+            AND p.created_at BETWEEN t.start_date AND t.end_date
+          WHERE s.is_active = true
+          GROUP BY s.id, t.id, t.name
+        `)
+      ]);
+
+      const mpesaBySchool = new Map(mpesaStats.rows.map(r => [r.school_id, r]));
+      const outstandingBySchool = new Map(subscriptionOutstanding.rows.map(r => [r.school_id, r]));
+      const termRevenueBySchool = termRevenue.rows.reduce((acc, r) => {
+        const list = acc.get(r.school_id) || [];
+        list.push({ term_id: r.term_id, term_name: r.term_name, term_revenue: Number(r.term_revenue || 0) });
+        acc.set(r.school_id, list);
+        return acc;
+      }, new Map());
+
+      const data = schools.rows.map(s => {
+        const m = mpesaBySchool.get(s.id) || {};
+        const o = outstandingBySchool.get(s.id) || {};
+        const success = Number(m.success_count || 0);
+        const fail = Number(m.fail_count || 0);
+        const successRate = (success + fail) > 0 ? (success / (success + fail) * 100) : 0;
+        const paymentConsistencyScore = isFinite(o.avg_days_to_pay) && o.avg_days_to_pay != null ? Math.max(0, 100 - Number(o.avg_days_to_pay) * 5) : 70;
+        const mpesaUsageScore = successRate;
+        const outstandingScore = Number(o.outstanding_balance || 0) === 0 ? 100 : Math.max(0, 100 - Math.log10(Number(o.outstanding_balance || 1)) * 20);
+        const disputePenalty = 0; // placeholder (no disputes table reference available)
+        const healthScore = Math.round(
+          0.35 * paymentConsistencyScore +
+          0.35 * mpesaUsageScore +
+          0.25 * outstandingScore -
+          0.05 * disputePenalty
+        );
+
+        return {
+          schoolId: s.id,
+          name: s.name,
+          logoUrl: s.logo_url,
+          totalPayments: Number(s.total_payments || 0),
+          paymentCount: Number(s.payment_count || 0),
+          mpesa: {
+            successRate: Number(successRate.toFixed(2)),
+            txCount: Number(m.tx_count || 0),
+            amount: Number(m.mpesa_amount || 0),
+            failedCount: Number(fail || 0)
+          },
+          outstanding: Number(o.outstanding_balance || 0),
+          avgDaysToPay: o.avg_days_to_pay != null ? Number(o.avg_days_to_pay) : null,
+          healthScore,
+          termRevenue: termRevenueBySchool.get(s.id) || []
+        };
+      });
+
+      res.json({ success: true, data });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // =============================================================================
+  // PLATFORM FINANCE MODULE: M-PESA ANALYTICS
+  // =============================================================================
+
+  // Real-time M-Pesa transactions and core KPIs
+  static async getMpesaOverview(req, res, next) {
+    try {
+      const { period = '24h' } = req.query;
+      const dateFilter = period === '24h' ? '24 hours' : period === '7d' ? '7 days' : '24 hours';
+
+      const [recent, rates, valueDist, peakTimes] = await Promise.all([
+        query(`
+          SELECT 
+            p.id as payment_id,
+            p.school_id,
+            s.name as school_name,
+            p.amount,
+            p.status,
+            p.created_at,
+            mt.result_code,
+            mt.result_desc as reason
+          FROM payments p
+          JOIN schools s ON p.school_id = s.id
+          LEFT JOIN mpesa_transactions mt ON mt.payment_id = p.id
+          WHERE p.channel = 'mpesa' 
+            AND p.created_at >= CURRENT_TIMESTAMP - INTERVAL '${dateFilter}'
+          ORDER BY p.created_at DESC
+          LIMIT 200
+        `),
+        query(`
+          SELECT 
+            COUNT(*) as total,
+            COUNT(CASE WHEN mt.result_code = '0' THEN 1 END) as success,
+            COUNT(CASE WHEN mt.result_code <> '0' OR mt.result_code IS NULL THEN 1 END) as failed
+          FROM payments p
+          LEFT JOIN mpesa_transactions mt ON mt.payment_id = p.id
+          WHERE p.channel = 'mpesa'
+            AND p.created_at >= CURRENT_TIMESTAMP - INTERVAL '${dateFilter}'
+        `),
+        query(`
+          SELECT 
+            CASE 
+              WHEN p.amount < 500 THEN '<500'
+              WHEN p.amount < 2000 THEN '500-1999'
+              WHEN p.amount < 5000 THEN '2000-4999'
+              WHEN p.amount < 10000 THEN '5000-9999'
+              ELSE '10000+'
+            END AS bucket,
+            COUNT(*) as count,
+            SUM(p.amount) as total
+          FROM payments p
+          WHERE p.channel = 'mpesa'
+            AND p.created_at >= CURRENT_TIMESTAMP - INTERVAL '${dateFilter}'
+          GROUP BY bucket
+          ORDER BY 
+            CASE bucket 
+              WHEN '<500' THEN 1
+              WHEN '500-1999' THEN 2
+              WHEN '2000-4999' THEN 3
+              WHEN '5000-9999' THEN 4
+              ELSE 5 END
+        `),
+        query(`
+          SELECT 
+            EXTRACT(HOUR FROM p.created_at) as hour,
+            COUNT(*) as tx_count,
+            SUM(p.amount) as total_amount
+          FROM payments p
+          WHERE p.channel = 'mpesa'
+            AND p.created_at >= CURRENT_TIMESTAMP - INTERVAL '${dateFilter}'
+          GROUP BY EXTRACT(HOUR FROM p.created_at)
+          ORDER BY hour
+        `)
+      ]);
+
+      res.json({
+        success: true,
+        data: {
+          recentTransactions: recent.rows,
+          rates: rates.rows[0],
+          valueDistribution: valueDist.rows,
+          peakTimes: peakTimes.rows
+        }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // School M-Pesa performance and configuration status
+  static async getMpesaPerformance(req, res, next) {
+    try {
+      // Configuration is global in this codebase; approximate per-school status by activity
+      const [activity, avgValues, methodPrefs] = await Promise.all([
+        query(`
+          SELECT 
+            s.id as school_id,
+            s.name as school_name,
+            COUNT(p.*) FILTER (WHERE p.channel = 'mpesa') as mpesa_tx,
+            COUNT(p.*) as all_tx,
+            COUNT(mt.*) FILTER (WHERE mt.result_code = '0') as success_tx,
+            COUNT(mt.*) FILTER (WHERE mt.result_code <> '0' OR mt.result_code IS NULL) as failed_tx
+          FROM schools s
+          LEFT JOIN payments p ON p.school_id = s.id 
+            AND p.created_at >= CURRENT_DATE - INTERVAL '90 days'
+          LEFT JOIN mpesa_transactions mt ON mt.payment_id = p.id
+          GROUP BY s.id, s.name
+          ORDER BY mpesa_tx DESC
+        `),
+        query(`
+          SELECT 
+            p.school_id,
+            AVG(CASE WHEN p.channel = 'mpesa' THEN p.amount END) as avg_mpesa_amount
+          FROM payments p
+          WHERE p.created_at >= CURRENT_DATE - INTERVAL '90 days'
+          GROUP BY p.school_id
+        `),
+        query(`
+          SELECT 
+            p.school_id,
+            p.channel,
+            COUNT(*) as count
+          FROM payments p
+          WHERE p.created_at >= CURRENT_DATE - INTERVAL '90 days'
+          GROUP BY p.school_id, p.channel
+        `)
+      ]);
+
+      const avgBySchool = new Map(avgValues.rows.map(r => [r.school_id, r.avg_mpesa_amount]));
+      const methodBySchool = methodPrefs.rows.reduce((acc, r) => {
+        const list = acc.get(r.school_id) || [];
+        list.push({ method: r.channel, count: Number(r.count || 0) });
+        acc.set(r.school_id, list);
+        return acc;
+      }, new Map());
+
+      const MPESA_ENV = process.env.MPESA_ENVIRONMENT || 'sandbox';
+      const data = activity.rows.map(r => {
+        const mpesaConfigured = Number(r.mpesa_tx || 0) > 0;
+        const configStatus = mpesaConfigured ? (MPESA_ENV === 'production' ? 'Live' : 'Sandbox') : 'Not Configured';
+        const total = Number(r.mpesa_tx || 0) + Number(r.failed_tx || 0);
+        const successRate = (Number(r.success_tx || 0) + Number(r.failed_tx || 0)) > 0
+          ? (Number(r.success_tx || 0) / (Number(r.success_tx || 0) + Number(r.failed_tx || 0)) * 100)
+          : 0;
+        return {
+          schoolId: r.school_id,
+          schoolName: r.school_name,
+          configStatus,
+          transactionVolume90d: Number(r.mpesa_tx || 0),
+          successRate: Number(successRate.toFixed(2)),
+          averageTransactionValue: avgBySchool.get(r.school_id) || 0,
+          paymentMethodPreferences: methodBySchool.get(r.school_id) || []
+        };
+      });
+
+      res.json({ success: true, data });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // Reconciliation dashboard
+  static async getMpesaReconciliation(req, res, next) {
+    try {
+      const [autoMatch, unreconciled, discrepancies] = await Promise.all([
+        query(`
+          SELECT 
+            COUNT(*) FILTER (WHERE status = 'reconciled') as reconciled,
+            COUNT(*) FILTER (WHERE status = 'pending') as pending,
+            COUNT(*) FILTER (WHERE status = 'failed') as failed
+          FROM payments
+          WHERE channel = 'mpesa'
+            AND created_at >= CURRENT_DATE - INTERVAL '30 days'
+        `),
+        query(`
+          SELECT 
+            p.id, p.school_id, s.name as school_name, p.amount, p.created_at
+          FROM payments p
+          JOIN schools s ON p.school_id = s.id
+          WHERE p.channel = 'mpesa' AND p.status IN ('pending','failed')
+          ORDER BY p.created_at DESC
+          LIMIT 100
+        `),
+        query(`
+          SELECT 
+            mt.id as mpesa_tx_id,
+            p.id as payment_id,
+            mt.result_code,
+            mt.result_desc,
+            p.amount,
+            p.created_at
+          FROM mpesa_transactions mt
+          JOIN payments p ON mt.payment_id = p.id
+          WHERE (mt.result_code <> '0' OR mt.result_code IS NULL)
+            AND p.created_at >= CURRENT_DATE - INTERVAL '30 days'
+          ORDER BY p.created_at DESC
+          LIMIT 100
+        `)
+      ]);
+
+      res.json({
+        success: true,
+        data: {
+          automatedMatching: autoMatch.rows[0],
+          unreconciledTransactions: unreconciled.rows,
+          discrepancyAlerts: discrepancies.rows
+        }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // =============================================================================
+  // PLATFORM FINANCE MODULE: SEGMENTS & COLLECTIONS
+  // =============================================================================
+
+  // Financial analytics by school segments and cohorts
+  static async getFinanceSegments(req, res, next) {
+    try {
+      const [byType, termPatterns, cohorts, mpesaAdoption] = await Promise.all([
+        query(`
+          SELECT 
+            s.school_type, -- e.g., 'day', 'boarding', 'private', 'public' combined text or enum
+            COUNT(DISTINCT s.id) as schools,
+            SUM(si.total_amount) as total_revenue,
+            AVG(si.total_amount) as avg_invoice
+          FROM schools s
+          JOIN subscription_invoices si ON s.id = si.school_id
+          GROUP BY s.school_type
+        `),
+        query(`
+          SELECT 
+            t.name as term_name,
+            DATE_TRUNC('quarter', si.invoice_date) as quarter,
+            SUM(si.total_amount) as total_revenue,
+            SUM(si.amount_paid) as collected_revenue
+          FROM academic_terms t
+          JOIN schools s ON t.school_id = s.id
+          LEFT JOIN subscription_invoices si ON si.school_id = s.id 
+            AND si.invoice_date BETWEEN t.start_date AND t.end_date
+          GROUP BY t.name, DATE_TRUNC('quarter', si.invoice_date)
+          ORDER BY quarter
+        `),
+        query(`
+          SELECT 
+            DATE_TRUNC('month', s.created_at) as cohort_month,
+            COUNT(*) as schools_registered,
+            SUM(si.total_amount) as revenue
+          FROM schools s
+          LEFT JOIN subscription_invoices si ON si.school_id = s.id
+          GROUP BY DATE_TRUNC('month', s.created_at)
+          ORDER BY cohort_month
+        `),
+        query(`
+          SELECT 
+            s.id as school_id,
+            s.name as school_name,
+            COUNT(p.*) FILTER (WHERE p.channel = 'mpesa') as mpesa_payments,
+            COUNT(p.*) as total_payments,
+            (COUNT(p.*) FILTER (WHERE p.channel = 'mpesa')::float / NULLIF(COUNT(p.*), 0)) * 100 as mpesa_usage_rate
+          FROM schools s
+          LEFT JOIN payments p ON p.school_id = s.id
+          GROUP BY s.id, s.name
+          ORDER BY mpesa_usage_rate DESC NULLS LAST
+        `)
+      ]);
+
+      res.json({
+        success: true,
+        data: {
+          revenueBySchoolType: byType.rows,
+          termRevenuePatterns: termPatterns.rows,
+          schoolCohorts: cohorts.rows,
+          mpesaAdoption: mpesaAdoption.rows
+        }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // Collections & credit management overview
+  static async getCollectionsOverview(req, res, next) {
+    try {
+      const [overdue, paymentPlans, suspensions, badDebt] = await Promise.all([
+        query(`
+          SELECT 
+            si.school_id,
+            s.name as school_name,
+            COUNT(*) as overdue_invoices,
+            SUM(si.balance_due) as overdue_amount,
+            MIN(si.due_date) as oldest_due
+          FROM subscription_invoices si
+          JOIN schools s ON si.school_id = s.id
+          WHERE si.due_date < CURRENT_DATE AND si.status != 'paid'
+          GROUP BY si.school_id, s.name
+          ORDER BY overdue_amount DESC
+        `),
+        query(`
+          SELECT 
+            p.school_id,
+            COUNT(*) as active_payment_plans
+          FROM payment_plans p
+          WHERE p.status = 'active'
+          GROUP BY p.school_id
+        `).catch(() => ({ rows: [] })),
+        query(`
+          SELECT 
+            s.id as school_id,
+            s.name as school_name,
+            CASE WHEN ss.subscription_status = 'suspended' THEN 1 ELSE 0 END as is_suspended
+          FROM schools s
+          LEFT JOIN school_subscriptions ss ON s.id = ss.school_id
+        `),
+        query(`
+          SELECT 
+            si.school_id,
+            SUM(si.balance_due) FILTER (WHERE si.status = 'written_off') as written_off_amount
+          FROM subscription_invoices si
+          GROUP BY si.school_id
+        `).catch(() => ({ rows: [] }))
+      ]);
+
+      const plansBySchool = new Map(paymentPlans.rows.map(r => [r.school_id, r.active_payment_plans]));
+      const suspendedBySchool = new Map(suspensions.rows.map(r => [r.school_id, r.is_suspended]));
+      const writtenOffBySchool = new Map(badDebt.rows.map(r => [r.school_id, r.written_off_amount]));
+
+      const items = overdue.rows.map(r => ({
+        schoolId: r.school_id,
+        schoolName: r.school_name,
+        overdueInvoices: Number(r.overdue_invoices || 0),
+        overdueAmount: Number(r.overdue_amount || 0),
+        oldestDue: r.oldest_due,
+        activePaymentPlans: plansBySchool.get(r.school_id) || 0,
+        isSuspended: suspendedBySchool.get(r.school_id) === 1,
+        writtenOffAmount: Number(writtenOffBySchool.get(r.school_id) || 0)
+      }));
+
+      res.json({ success: true, data: { collections: items } });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // Customer lifetime value by school category
+  static async getClvByCategory(req, res, next) {
+    try {
+      const result = await query(`
+        SELECT 
+          s.school_type,
+          AVG(
+            CASE 
+              WHEN ss.cancelled_at IS NOT NULL THEN EXTRACT(DAYS FROM ss.cancelled_at - ss.start_date) / 30.0
+              ELSE EXTRACT(DAYS FROM CURRENT_DATE - ss.start_date) / 30.0
+            END
+          ) AS avg_lifetime_months,
+          AVG(ss.monthly_cost) AS avg_monthly_cost,
+          (AVG(ss.monthly_cost) * AVG(
+            CASE 
+              WHEN ss.cancelled_at IS NOT NULL THEN EXTRACT(DAYS FROM ss.cancelled_at - ss.start_date) / 30.0
+              ELSE EXTRACT(DAYS FROM CURRENT_DATE - ss.start_date) / 30.0
+            END
+          )) AS clv
+        FROM school_subscriptions ss
+        JOIN schools s ON ss.school_id = s.id
+        WHERE ss.subscription_status IN ('active','trial','suspended','cancelled')
+        GROUP BY s.school_type
+        ORDER BY clv DESC NULLS LAST
+      `);
+      res.json({ success: true, data: result.rows });
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 module.exports = PlatformAnalyticsController;

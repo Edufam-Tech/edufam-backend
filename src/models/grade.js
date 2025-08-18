@@ -139,7 +139,7 @@ class Grade {
         JOIN schools s ON g.school_id = s.id
         JOIN assessments a ON g.assessment_id = a.id
         JOIN students st ON g.student_id = st.id
-        JOIN users u ON g.created_by = u.id
+        LEFT JOIN users u ON g.created_by = u.id
         LEFT JOIN users sb ON g.submitted_by = sb.id
         LEFT JOIN users ap ON g.approved_by = ap.id
         WHERE g.id = $1
@@ -198,7 +198,7 @@ class Grade {
           ap.first_name || ' ' || ap.last_name as approved_by_name
         FROM grades g
         JOIN students st ON g.student_id = st.id
-        JOIN users u ON g.created_by = u.id
+        LEFT JOIN users u ON g.created_by = u.id
         LEFT JOIN users sb ON g.submitted_by = sb.id
         LEFT JOIN users ap ON g.approved_by = ap.id
         WHERE g.assessment_id = $1
@@ -279,7 +279,7 @@ class Grade {
         JOIN assessments a ON g.assessment_id = a.id
         JOIN grade_categories gc ON a.category_id = gc.id
         LEFT JOIN subjects sub ON a.subject_id = sub.id
-        JOIN users u ON g.created_by = u.id
+        LEFT JOIN users u ON g.created_by = u.id
         LEFT JOIN users sb ON g.submitted_by = sb.id
         LEFT JOIN users ap ON g.approved_by = ap.id
         WHERE g.student_id = $1
@@ -550,7 +550,7 @@ class Grade {
         FROM grades g
         JOIN assessments a ON g.assessment_id = a.id
         JOIN students st ON g.student_id = st.id
-        JOIN users sb ON g.submitted_by = sb.id
+        LEFT JOIN users sb ON g.submitted_by = sb.id
         JOIN grade_categories gc ON a.category_id = gc.id
         WHERE g.school_id = $1 AND g.status = 'submitted'
       `;

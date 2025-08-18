@@ -655,57 +655,65 @@ class SchoolService {
     try {
       const { query } = require('../config/database');
       
-      let sql = `
+      const params = [schoolId];
+      let paramCount = 1;
+      let cteWhere = '';
+      if (filters.academicYearId) {
+        paramCount++;
+        cteWhere += ` AND c.academic_year_id = $${paramCount}`;
+        params.push(filters.academicYearId);
+      }
+      if (filters.curriculumType) {
+        paramCount++;
+        cteWhere += ` AND c.curriculum_type = $${paramCount}`;
+        params.push(filters.curriculumType);
+      }
+
+      const sql = `
         WITH class_counts AS (
           SELECT 
             c.id,
             c.is_active,
             c.curriculum_type,
             c.capacity,
-            -- derive enrollment from students table when current_enrollment column is absent
-            (SELECT COUNT(*) FROM students s WHERE s.class_id = c.id AND s.enrollment_status = 'active')::int AS derived_enrollment
+            -- derive enrollment from enrollments table to match schema
+            (SELECT COUNT(*) FROM enrollments e WHERE e.class_id = c.id AND e.is_active = true)::int AS derived_enrollment
           FROM classes c
-          WHERE c.school_id = $1
+          WHERE c.school_id = $1${cteWhere}
         )
         SELECT 
           COUNT(id) as total_classes,
           COUNT(id) FILTER (WHERE is_active = true) as active_classes,
           COUNT(DISTINCT curriculum_type) as curriculum_types,
-          AVG(derived_enrollment)::numeric(10,2) as average_enrollment,
-          SUM(derived_enrollment) as total_students,
-          COUNT(id) FILTER (WHERE derived_enrollment >= capacity * 0.9) as near_capacity_classes,
-          COUNT(id) FILTER (WHERE derived_enrollment < capacity * 0.5) as under_enrolled_classes
-        FROM class_counts
-      `;
-      
-      const params = [schoolId];
-      let paramCount = 1;
-
-      if (filters.academicYearId) {
-        paramCount++;
-        sql += ` AND c.academic_year_id = $${paramCount}`;
-        params.push(filters.academicYearId);
-      }
-
-      if (filters.curriculumType) {
-        paramCount++;
-        sql += ` AND c.curriculum_type = $${paramCount}`;
-        params.push(filters.curriculumType);
-      }
+          COALESCE(AVG(derived_enrollment), 0)::numeric(10,2) as average_enrollment,
+          COALESCE(SUM(derived_enrollment), 0) as total_students,
+          COUNT(id) FILTER (WHERE capacity > 0 AND derived_enrollment >= capacity * 0.9) as near_capacity_classes,
+          COUNT(id) FILTER (WHERE capacity > 0 AND derived_enrollment < capacity * 0.5) as under_enrolled_classes
+        FROM class_counts`;
 
       const result = await query(sql, params);
       const analytics = result.rows[0];
 
       // Calculate percentages
-      analytics.enrollment_rate = analytics.total_classes > 0 
-        ? Math.round((analytics.total_students / (analytics.total_classes * analytics.average_enrollment)) * 100) 
+      analytics.enrollment_rate = analytics.total_classes > 0 && Number(analytics.average_enrollment) > 0
+        ? Math.round((analytics.total_students / (analytics.total_classes * Number(analytics.average_enrollment))) * 100)
         : 0;
       
       analytics.capacity_utilization = analytics.total_classes > 0 
         ? Math.round((analytics.near_capacity_classes / analytics.total_classes) * 100) 
         : 0;
 
-      return analytics;
+      return analytics || {
+        total_classes: 0,
+        active_classes: 0,
+        curriculum_types: 0,
+        average_enrollment: 0,
+        total_students: 0,
+        near_capacity_classes: 0,
+        under_enrolled_classes: 0,
+        enrollment_rate: 0,
+        capacity_utilization: 0,
+      };
     } catch (error) {
       throw new DatabaseError('Failed to get class analytics');
     }

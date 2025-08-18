@@ -312,9 +312,91 @@ class DirectorWebController {
   }
 
   // Recruitment and fee assignment approvals (stubs delegating to approval_requests table when available)
-  async getPendingRecruitmentApprovals(req, res) { return res.json({ success: true, data: { approvals: [] } }); }
-  async approveRecruitment(req, res) { return res.json({ success: true, message: 'Recruitment approved' }); }
-  async rejectRecruitment(req, res) { return res.json({ success: true, message: 'Recruitment rejected' }); }
+  async getPendingRecruitmentApprovals(req, res) {
+    try {
+      req.query.category = 'recruitment';
+      return this.getPendingApprovals(req, res);
+    } catch (e) {
+      return res.status(500).json({ success: false, error: { message: 'Failed to fetch recruitment approvals' } });
+    }
+  }
+  async approveRecruitment(req, res) {
+    try {
+      const { recruitmentId } = req.params;
+      const { comments } = req.body || {};
+      const userId = req.user.userId;
+      const schoolId = req.user.schoolId || req.user.school_id;
+
+      // Update recruitment request
+      const result = await query(`
+        UPDATE recruitment_requests 
+        SET status = 'approved', approval_notes = $1, approved_by = $2, approved_at = CURRENT_TIMESTAMP
+        WHERE id = $3 AND school_id = $4
+        RETURNING *
+      `, [comments || null, userId, recruitmentId, schoolId]);
+
+      if (result.rows.length === 0) {
+        return res.status(404).json({ success: false, error: { message: 'Recruitment request not found' } });
+      }
+      const approved = result.rows[0];
+
+      // Sync approval_requests
+      await query(
+        `UPDATE approval_requests SET approval_status = 'approved', final_approver_id = $1, final_approved_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE request_type = 'recruitment' AND request_id = $2 AND school_id = $3`,
+        [userId, recruitmentId, schoolId]
+      );
+
+      // Publish job posting
+      try {
+        await query(`
+          INSERT INTO job_postings (school_id, title, department_id, description, requirements, status, posted_by)
+          VALUES ($1, $2, $3, $4, $5, 'active', $6)
+          ON CONFLICT DO NOTHING
+        `, [
+          approved.school_id,
+          approved.position_title,
+          approved.department_id || null,
+          approved.description || null,
+          JSON.stringify(approved.requirements || []),
+          userId,
+        ]);
+      } catch (e) {
+        // ignore publish failure
+      }
+
+      return res.json({ success: true, message: 'Recruitment approved' });
+    } catch (e) {
+      return res.status(500).json({ success: false, error: { message: 'Failed to approve recruitment' } });
+    }
+  }
+  async rejectRecruitment(req, res) {
+    try {
+      const { recruitmentId } = req.params;
+      const { reason } = req.body || {};
+      const userId = req.user.userId;
+      const schoolId = req.user.schoolId || req.user.school_id;
+
+      const result = await query(`
+        UPDATE recruitment_requests 
+        SET status = 'rejected', rejection_reason = $1, rejected_by = $2, rejected_at = CURRENT_TIMESTAMP
+        WHERE id = $3 AND school_id = $4
+        RETURNING *
+      `, [reason || null, userId, recruitmentId, schoolId]);
+
+      if (result.rows.length === 0) {
+        return res.status(404).json({ success: false, error: { message: 'Recruitment request not found' } });
+      }
+
+      await query(
+        `UPDATE approval_requests SET approval_status = 'rejected', final_rejection_reason = $1, updated_at = CURRENT_TIMESTAMP WHERE request_type = 'recruitment' AND request_id = $2 AND school_id = $3`,
+        [reason || null, recruitmentId, schoolId]
+      );
+
+      return res.json({ success: true, message: 'Recruitment rejected' });
+    } catch (e) {
+      return res.status(500).json({ success: false, error: { message: 'Failed to reject recruitment' } });
+    }
+  }
 
   async getPendingFeeAssignmentApprovals(req, res) { return res.json({ success: true, data: { approvals: [] } }); }
   async approveFeeAssignment(req, res) { return res.json({ success: true, message: 'Fee assignment approved' }); }
