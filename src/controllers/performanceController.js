@@ -270,14 +270,15 @@ class PerformanceController {
         SELECT pa.id, pa.cycle_id, pa.employee_id, pa.status,
                pa.self_assessment_completed, pa.supervisor_review_completed,
                pa.peer_feedback_completed, pa.overall_rating, pa.created_at,
-               e.first_name || ' ' || e.last_name as employee_name,
-               e.position,
+               u.first_name || ' ' || u.last_name as employee_name,
+               COALESCE(e.position, 'Not Assigned') as position,
                ac.name as cycle_name, ac.year
         FROM performance_appraisals pa
         JOIN appraisal_cycles ac ON pa.cycle_id = ac.id
         JOIN employees e ON pa.employee_id = e.id
+        LEFT JOIN users u ON e.user_id = u.id
         ${whereClause}
-        ORDER BY ac.year DESC, e.first_name, e.last_name
+        ORDER BY ac.year DESC, u.first_name, u.last_name
       `, params);
 
       res.json({

@@ -602,8 +602,8 @@ class TimetableController {
         SELECT 
           te.*,
           tv.version_name,
-          c.class_name,
-          s.subject_name,
+          c.name as class_name,
+          s.name as subject_name,
           st.first_name as teacher_first_name,
           st.last_name as teacher_last_name,
           cr.room_name
@@ -614,7 +614,7 @@ class TimetableController {
         LEFT JOIN staff st ON te.teacher_id = st.id
         LEFT JOIN classrooms cr ON te.room_id = cr.id
         ${whereClause}
-        ORDER BY te.day_of_week, te.period_number, c.class_name
+        ORDER BY te.day_of_week, te.period_number, c.name
       `, params);
 
       res.json({

@@ -100,9 +100,9 @@ router.get('/tracking/vehicles',
           tv.vehicle_number as registration_number,
           COALESCE(tvl.latitude, NULL) as latitude,
           COALESCE(tvl.longitude, NULL) as longitude,
-          COALESCE(tvl.speed, 0) as speed,
-          COALESCE(tvl.heading, 0) as heading,
-          COALESCE(tvl.status, 'offline') as status,
+          0 as speed,
+          0 as heading,
+          CASE WHEN tvl.timestamp IS NOT NULL THEN 'online' ELSE 'offline' END as status,
           COALESCE(tvl.timestamp, NOW()) as last_update,
           tv.capacity
         FROM transport_vehicles tv

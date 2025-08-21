@@ -264,10 +264,24 @@ class FeeController {
       if (assignment_type) { where += ` AND assignment_type = $${idx++}`; params.push(assignment_type); }
       if (academic_year) { where += ` AND academic_year = $${idx++}`; params.push(academic_year); }
       const offset = (parseInt(page, 10) - 1) * parseInt(limit, 10);
+      
+      // Use COALESCE to handle missing columns gracefully
       const sql = `
-        SELECT id, assignment_name, assignment_code, assignment_type, curriculum_type,
-               academic_year, academic_term, total_amount, status, execution_status,
-               created_by, created_at, approved_by, approved_at
+        SELECT 
+          id, 
+          COALESCE(assignment_name, 'Fee Assignment ' || id::text) as assignment_name,
+          assignment_code, 
+          assignment_type, 
+          curriculum_type,
+          academic_year, 
+          academic_term, 
+          total_amount, 
+          status, 
+          COALESCE(execution_status, 'pending') as execution_status,
+          created_by, 
+          created_at, 
+          approved_by, 
+          approved_at
         FROM fee_assignments
         ${where}
         ORDER BY created_at DESC

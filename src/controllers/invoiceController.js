@@ -414,9 +414,9 @@ class InvoiceController {
           s.first_name as student_first_name,
           s.last_name as student_last_name,
           s.admission_number,
-          c.class_name,
-          ay.year_name,
-          at.term_name
+          COALESCE(c.name, 'Not Assigned') as class_name,
+          COALESCE(ay.name, 'Not Set') as year_name,
+          COALESCE(at.name, 'Not Set') as term_name
         FROM invoices i
         JOIN students s ON i.student_id = s.id
         LEFT JOIN classes c ON s.class_id = c.id
@@ -453,7 +453,7 @@ class InvoiceController {
             s.first_name as student_first_name,
             s.last_name as student_last_name,
             s.admission_number,
-            c.class_name,
+            c.name as class_name,
             it.template_name,
             iser.series_name
           FROM invoices i

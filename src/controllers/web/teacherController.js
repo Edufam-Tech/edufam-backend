@@ -14,12 +14,12 @@ class TeacherWebController {
           ORDER BY c.name
         `, [teacherId]),
         query(`
-          SELECT te.period_start, te.period_end, c.name as class_name, s.name as subject_name
+          SELECT te.start_time as period_start, te.end_time as period_end, c.name as class_name, s.name as subject_name
           FROM timetable_entries te
           JOIN classes c ON te.class_id = c.id
           JOIN subjects s ON te.subject_id = s.id
-          WHERE te.teacher_id = $1 AND te.is_active = true AND te.date = CURRENT_DATE
-          ORDER BY te.period_start
+          WHERE te.teacher_id = $1 AND te.is_active = true AND te.day_of_week = LOWER(TO_CHAR(CURRENT_DATE, 'Day'))
+          ORDER BY te.start_time
         `, [teacherId])
       ]);
       res.json({ success: true, data: { classes: classes.rows, today: today.rows } });

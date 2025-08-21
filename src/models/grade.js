@@ -272,14 +272,12 @@ class Grade {
           a.assessment_date,
           gc.name as category_name,
           sub.name as subject_name,
-          u.first_name || ' ' || u.last_name as created_by_name,
           sb.first_name || ' ' || sb.last_name as submitted_by_name,
           ap.first_name || ' ' || ap.last_name as approved_by_name
         FROM grades g
         JOIN assessments a ON g.assessment_id = a.id
         JOIN grade_categories gc ON a.category_id = gc.id
         LEFT JOIN subjects sub ON a.subject_id = sub.id
-        LEFT JOIN users u ON g.created_by = u.id
         LEFT JOIN users sb ON g.submitted_by = sb.id
         LEFT JOIN users ap ON g.approved_by = ap.id
         WHERE g.student_id = $1

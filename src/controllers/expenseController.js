@@ -14,41 +14,41 @@ class ExpenseController {
       const limit = parseInt(req.query.limit) || 20;
       const offset = (page - 1) * limit;
 
-      let whereClause = 'WHERE school_id = $1';
+      let whereClause = 'WHERE er.school_id = $1';
       const params = [schoolId];
 
       if (status) {
-        whereClause += ' AND status = $2';
+        whereClause += ' AND er.status = $2';
         params.push(status);
       }
 
       if (category) {
-        whereClause += ` AND category = $${params.length + 1}`;
+        whereClause += ` AND er.category = $${params.length + 1}`;
         params.push(category);
       }
 
       if (priority) {
-        whereClause += ` AND priority = $${params.length + 1}`;
+        whereClause += ` AND er.priority = $${params.length + 1}`;
         params.push(priority);
       }
 
       if (dateFrom) {
-        whereClause += ` AND created_at >= $${params.length + 1}`;
+        whereClause += ` AND er.created_at >= $${params.length + 1}`;
         params.push(dateFrom);
       }
 
       if (dateTo) {
-        whereClause += ` AND created_at <= $${params.length + 1}`;
+        whereClause += ` AND er.created_at <= $${params.length + 1}`;
         params.push(dateTo);
       }
 
       if (amountMin) {
-        whereClause += ` AND amount >= $${params.length + 1}`;
+        whereClause += ` AND er.amount >= $${params.length + 1}`;
         params.push(amountMin);
       }
 
       if (amountMax) {
-        whereClause += ` AND amount <= $${params.length + 1}`;
+        whereClause += ` AND er.amount <= $${params.length + 1}`;
         params.push(amountMax);
       }
 
@@ -69,7 +69,7 @@ class ExpenseController {
       // Get total count
       const countResult = await query(`
         SELECT COUNT(*) as total
-        FROM expense_requests 
+        FROM expense_requests er
         ${whereClause}
       `, params);
 

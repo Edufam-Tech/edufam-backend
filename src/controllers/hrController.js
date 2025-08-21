@@ -973,7 +973,9 @@ class HRController {
           u.id as user_id,
           u.first_name, u.last_name, u.email, u.role, u.activation_status,
           u.profile_picture_url,
-          e.id as employee_id, e.position, e.employment_status, d.name as department_name
+          e.id as employee_id, COALESCE(e.position, 'Not Assigned') as position, 
+          COALESCE(e.status, 'active') as employment_status, 
+          d.name as department_name
         FROM users u
         JOIN employees e ON e.user_id = u.id
         LEFT JOIN departments d ON e.department_id = d.id
@@ -1200,7 +1202,9 @@ class HRController {
       const nonDashboardUsers = await query(`
         SELECT 
           u.id, u.first_name, u.last_name, u.email, u.phone, u.profile_picture_url,
-          e.employee_number, e.position, e.hire_date,
+          COALESCE(e.employee_number, 'N/A') as employee_number, 
+          COALESCE(e.position, 'Not Assigned') as position, 
+          COALESCE(e.start_date, CURRENT_DATE) as hire_date,
           d.name as department_name
         FROM users u
         JOIN employees e ON u.id = e.user_id
@@ -1266,7 +1270,8 @@ class HRController {
     try {
       const parents = await query(`
         SELECT 
-          u.id, u.first_name, u.last_name, u.email, u.phone_number, u.activation_status,
+          u.id, u.first_name, u.last_name, u.email, u.phone as phone_number, 
+          COALESCE(u.activation_status, 'active') as activation_status,
           (
             SELECT COUNT(*) FROM enrollments e WHERE e.parent_id = u.id
           ) AS children_count

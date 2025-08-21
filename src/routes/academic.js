@@ -87,6 +87,12 @@ router.post('/grades/entry',
   GradeController.enterGrade
 );
 
+router.get('/grades/pending-approval', 
+  authenticate, 
+  requireRole(['principal', 'school_director']), 
+  GradeController.getPendingApproval
+);
+
 router.get('/grades/:assessmentId', 
   authenticate, 
   GradeController.getGrades
@@ -134,12 +140,6 @@ router.post('/grades/submit-approval',
   authenticate, 
   requireRole(['teacher']), 
   GradeController.submitForApproval
-);
-
-router.get('/grades/pending-approval', 
-  authenticate, 
-  requireRole(['principal', 'school_director']), 
-  GradeController.getPendingApproval
 );
 
 router.post('/grades/approve', 
