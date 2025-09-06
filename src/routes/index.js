@@ -316,73 +316,72 @@ router.get('/health', (req, res) => {
  */
 
 // Core school routes with authentication
-// Enforce maintenance mode for school app APIs
-router.use(checkMaintenanceMode);
-router.use('/users', schoolAuth, userRoutes);
-router.use('/upload', schoolAuth, uploadRoutes);
-router.use('/schools', schoolAuth, schoolRoutesOld);
-router.use('/school', schoolAuth, schoolRoutes);
-router.use('/students', schoolAuth, studentRoutes);
-router.use('/staff', schoolAuth, staffRoutes);
-router.use('/departments', schoolAuth, departmentRoutes);
+// Enforce maintenance mode for school app APIs only
+router.use('/users', checkMaintenanceMode, schoolAuth, userRoutes);
+router.use('/upload', checkMaintenanceMode, schoolAuth, uploadRoutes);
+router.use('/schools', checkMaintenanceMode, schoolAuth, schoolRoutesOld);
+router.use('/school', checkMaintenanceMode, schoolAuth, schoolRoutes);
+router.use('/students', checkMaintenanceMode, schoolAuth, studentRoutes);
+router.use('/staff', checkMaintenanceMode, schoolAuth, staffRoutes);
+router.use('/departments', checkMaintenanceMode, schoolAuth, departmentRoutes);
 
 // Academic management routes
-router.use('/academic', schoolAuth, academicRoutes);
-router.use('/examinations', schoolAuth, examinationRoutes);
-router.use('/curriculum', schoolAuth, curriculumRoutes);
-router.use('/timetable', schoolAuth, timetableRoutes);
-router.use('/ai-timetable', schoolAuth, aiTimetableRoutes);
+router.use('/academic', checkMaintenanceMode, schoolAuth, academicRoutes);
+router.use('/examinations', checkMaintenanceMode, schoolAuth, examinationRoutes);
+router.use('/curriculum', checkMaintenanceMode, schoolAuth, curriculumRoutes);
+router.use('/timetable', checkMaintenanceMode, schoolAuth, timetableRoutes);
+router.use('/ai-timetable', checkMaintenanceMode, schoolAuth, aiTimetableRoutes);
 
 // Financial management routes
-router.use('/financial', schoolAuth, financialRoutes);
-router.use('/expenses', schoolAuth, expenseRoutes);
-router.use('/payroll', schoolAuth, payrollRoutes);
+router.use('/financial', checkMaintenanceMode, schoolAuth, financialRoutes);
+router.use('/expenses', checkMaintenanceMode, schoolAuth, expenseRoutes);
+router.use('/payroll', checkMaintenanceMode, schoolAuth, payrollRoutes);
 
 // Operations management routes
-router.use('/transport', schoolAuth, transportRoutes);
-router.use('/hr', schoolAuth, hrRoutes);
-router.use('/performance', schoolAuth, performanceRoutes);
-router.use('/inventory', schoolAuth, inventoryRoutes);
+router.use('/transport', checkMaintenanceMode, schoolAuth, transportRoutes);
+router.use('/hr', checkMaintenanceMode, schoolAuth, hrRoutes);
+router.use('/performance', checkMaintenanceMode, schoolAuth, performanceRoutes);
+router.use('/inventory', checkMaintenanceMode, schoolAuth, inventoryRoutes);
 
 // Communication and reporting routes
-router.use('/communication', schoolAuth, communicationRoutes);
-router.use('/reports', schoolAuth, reportsRoutes);
-router.use('/certificates', schoolAuth, certificateRoutes);
-router.use('/invoices', schoolAuth, invoiceRoutes);
-router.use('/appraisals', schoolAuth, appraisalRoutes);
-router.use('/calendar', schoolAuth, calendarRoutes);
+router.use('/communication', checkMaintenanceMode, schoolAuth, communicationRoutes);
+router.use('/reports', checkMaintenanceMode, schoolAuth, reportsRoutes);
+router.use('/certificates', checkMaintenanceMode, schoolAuth, certificateRoutes);
+router.use('/invoices', checkMaintenanceMode, schoolAuth, invoiceRoutes);
+router.use('/appraisals', checkMaintenanceMode, schoolAuth, appraisalRoutes);
+router.use('/calendar', checkMaintenanceMode, schoolAuth, calendarRoutes);
 
 // Trip and training management
-router.use('/trips', schoolAuth, tripsRoutes);
-router.use('/training', schoolAuth, trainingRoutes);
+router.use('/trips', checkMaintenanceMode, schoolAuth, tripsRoutes);
+router.use('/training', checkMaintenanceMode, schoolAuth, trainingRoutes);
 
 // Real-time and marketplace
-router.use('/realtime', schoolAuth, realtimeRoutes);
-router.use('/marketplace', schoolAuth, marketplaceRoutes);
+router.use('/realtime', checkMaintenanceMode, schoolAuth, realtimeRoutes);
+router.use('/marketplace', checkMaintenanceMode, schoolAuth, marketplaceRoutes);
 
 // Analytics and business intelligence
-router.use('/analytics', schoolAuth, analyticsRoutes);
+router.use('/analytics', checkMaintenanceMode, schoolAuth, analyticsRoutes);
 
 // Security and compliance
-router.use('/security', schoolAuth, securityRoutes);
-router.use('/compliance', schoolAuth, complianceRoutes);
+router.use('/security', checkMaintenanceMode, schoolAuth, securityRoutes);
+router.use('/compliance', checkMaintenanceMode, schoolAuth, complianceRoutes);
 
 // Internationalization and cloud features
-router.use('/i18n', schoolAuth, i18nRoutes);
-router.use('/cloud', schoolAuth, cloudRoutes);
+router.use('/i18n', checkMaintenanceMode, schoolAuth, i18nRoutes);
+router.use('/cloud', checkMaintenanceMode, schoolAuth, cloudRoutes);
 
 // Mobile application routes (only for dashboard users)
 // Allow parent users access to mobile routes alongside school users
 const { authenticate } = require('../middleware/auth');
-router.use('/mobile', authenticate, mobileRoutes);
+router.use('/mobile', checkMaintenanceMode, authenticate, mobileRoutes);
 
 // Web dashboard routes (role-guarded inside the router)
-router.use('/web/director', directorWebRoutes);
-router.use('/web/principal', principalWebRoutes);
-router.use('/web/teacher', teacherWebRoutes);
-router.use('/web/hr', hrWebRoutes);
-router.use('/web/finance', financeWebRoutes);
-router.use('/web/parent', parentWebRoutes);
+router.use('/web/director', checkMaintenanceMode, directorWebRoutes);
+router.use('/web/principal', checkMaintenanceMode, principalWebRoutes);
+router.use('/web/teacher', checkMaintenanceMode, teacherWebRoutes);
+router.use('/web/hr', checkMaintenanceMode, hrWebRoutes);
+router.use('/web/finance', checkMaintenanceMode, financeWebRoutes);
+router.use('/web/parent', checkMaintenanceMode, parentWebRoutes);
 
 /**
  * ===========================
@@ -393,26 +392,29 @@ router.use('/web/parent', parentWebRoutes);
  * ===========================
  */
 
+// Import bypass maintenance middleware
+const { bypassMaintenance } = require('../middleware/auth');
+
 // Admin platform management
-router.use('/admin/multi-school', adminAuth, multiSchoolRoutes);
-router.use('/admin/subscriptions', adminAuth, subscriptionRoutes);
-router.use('/admin/analytics', adminAuth, platformAnalyticsRoutes);
-router.use('/admin/hr', adminAuth, adminHrRoutes);
-router.use('/admin/trips', adminAuth, adminTripRoutes);
-router.use('/admin/crm', adminAuth, adminCrmRoutes);
-router.use('/admin/users', adminAuth, adminUserRoutes);
-router.use('/admin/config', adminAuth, systemConfigRoutes);
-router.use('/admin/regional', adminAuth, regionalRoutes);
-router.use('/admin/monitoring', adminAuth, monitoringRoutes);
-router.use('/admin/migration', adminAuth, dataMigrationRoutes);
-router.use('/admin/integrations', adminAuth, integrationRoutes);
-router.use('/admin/compliance', adminAuth, adminComplianceRoutes);
-router.use('/admin/support', adminAuth, adminSupportRoutes);
-router.use('/admin/communication', adminAuth, adminCommunicationRoutes);
+router.use('/admin/multi-school', adminAuth, bypassMaintenance, multiSchoolRoutes);
+router.use('/admin/subscriptions', adminAuth, bypassMaintenance, subscriptionRoutes);
+router.use('/admin/analytics', adminAuth, bypassMaintenance, platformAnalyticsRoutes);
+router.use('/admin/hr', adminAuth, bypassMaintenance, adminHrRoutes);
+router.use('/admin/trips', adminAuth, bypassMaintenance, adminTripRoutes);
+router.use('/admin/crm', adminAuth, bypassMaintenance, adminCrmRoutes);
+router.use('/admin/users', adminAuth, bypassMaintenance, adminUserRoutes);
+router.use('/admin/config', adminAuth, bypassMaintenance, systemConfigRoutes);
+router.use('/admin/regional', adminAuth, bypassMaintenance, regionalRoutes);
+router.use('/admin/monitoring', adminAuth, bypassMaintenance, monitoringRoutes);
+router.use('/admin/migration', adminAuth, bypassMaintenance, dataMigrationRoutes);
+router.use('/admin/integrations', adminAuth, bypassMaintenance, integrationRoutes);
+router.use('/admin/compliance', adminAuth, bypassMaintenance, adminComplianceRoutes);
+router.use('/admin/support', adminAuth, bypassMaintenance, adminSupportRoutes);
+router.use('/admin/communication', adminAuth, bypassMaintenance, adminCommunicationRoutes);
 // Expose marketplace to admin app as well
-router.use('/admin/marketplace', adminAuth, marketplaceRoutes);
+router.use('/admin/marketplace', adminAuth, bypassMaintenance, marketplaceRoutes);
 // Allow admin app to use upload endpoints too
-router.use('/admin/upload', adminAuth, uploadRoutes);
+router.use('/admin/upload', adminAuth, bypassMaintenance, uploadRoutes);
 
 /**
  * ===========================

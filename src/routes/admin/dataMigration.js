@@ -17,7 +17,7 @@ router.use(requireUserType('platform_admin'));
  * @access  Private (Platform Admin)
  */
 router.get('/export/templates',
-  requireRole(['super_admin', 'regional_admin']),
+  requireRole(['super_admin']),
   DataMigrationController.getExportTemplates
 );
 
@@ -27,7 +27,7 @@ router.get('/export/templates',
  * @access  Private (Super Admin, Regional Admin)
  */
 router.post('/export/templates',
-  requireRole(['super_admin', 'regional_admin']),
+  requireRole(['super_admin']),
   DataMigrationController.createExportTemplate
 );
 
@@ -37,7 +37,7 @@ router.post('/export/templates',
  * @access  Private (Super Admin, Regional Admin)
  */
 router.post('/export/data',
-  requireRole(['super_admin', 'regional_admin']),
+  requireRole(['super_admin']),
   DataMigrationController.exportSchoolData
 );
 
@@ -47,7 +47,7 @@ router.post('/export/data',
  * @access  Private (Platform Admin)
  */
 router.get('/export/jobs',
-  requireRole(['super_admin', 'regional_admin']),
+  requireRole(['super_admin']),
   DataMigrationController.getExportJobs
 );
 
@@ -57,7 +57,7 @@ router.get('/export/jobs',
  * @access  Private (Platform Admin)
  */
 router.get('/export/jobs/:jobId/download',
-  requireRole(['super_admin', 'regional_admin']),
+  requireRole(['super_admin']),
   async (req, res, next) => {
     try {
       const { jobId } = req.params;
@@ -98,7 +98,7 @@ router.get('/export/jobs/:jobId/download',
  * @access  Private (Platform Admin)
  */
 router.get('/import/templates',
-  requireRole(['super_admin', 'regional_admin']),
+  requireRole(['super_admin']),
   DataMigrationController.getImportTemplates
 );
 
@@ -108,7 +108,7 @@ router.get('/import/templates',
  * @access  Private (Super Admin, Regional Admin)
  */
 router.post('/import/validate',
-  requireRole(['super_admin', 'regional_admin']),
+  requireRole(['super_admin']),
   DataMigrationController.validateImportData
 );
 
@@ -118,7 +118,7 @@ router.post('/import/validate',
  * @access  Private (Super Admin, Regional Admin)
  */
 router.post('/import/execute',
-  requireRole(['super_admin', 'regional_admin']),
+  requireRole(['super_admin']),
   DataMigrationController.executeImport
 );
 
@@ -128,7 +128,7 @@ router.post('/import/execute',
  * @access  Private (Platform Admin)
  */
 router.get('/import/jobs',
-  requireRole(['super_admin', 'regional_admin']),
+  requireRole(['super_admin']),
   DataMigrationController.getImportJobs
 );
 
@@ -138,7 +138,7 @@ router.get('/import/jobs',
  * @access  Private (Platform Admin)
  */
 router.get('/import/jobs/:jobId',
-  requireRole(['super_admin', 'regional_admin']),
+  requireRole(['super_admin']),
   async (req, res, next) => {
     try {
       const { jobId } = req.params;
@@ -354,7 +354,7 @@ router.put('/projects/:projectId',
  * @access  Private (Platform Admin)
  */
 router.get('/transformation-rules',
-  requireRole(['super_admin', 'regional_admin']),
+  requireRole(['super_admin']),
   DataMigrationController.getTransformationRules
 );
 
@@ -491,7 +491,7 @@ router.post('/transformation-rules/:ruleId/test',
  * @access  Private (Platform Admin)
  */
 router.get('/backups',
-  requireRole(['super_admin', 'regional_admin']),
+  requireRole(['super_admin']),
   DataMigrationController.getBackups
 );
 
@@ -501,7 +501,7 @@ router.get('/backups',
  * @access  Private (Super Admin, Regional Admin)
  */
 router.post('/backups',
-  requireRole(['super_admin', 'regional_admin']),
+  requireRole(['super_admin']),
   DataMigrationController.createBackup
 );
 
@@ -511,11 +511,13 @@ router.post('/backups',
  * @access  Private (Super Admin, Regional Admin)
  */
 router.get('/backups/:backupId/download',
-  requireRole(['super_admin', 'regional_admin']),
+  requireRole(['super_admin']),
   async (req, res, next) => {
     try {
       const { backupId } = req.params;
       const { query } = require('../../config/database');
+      const fs = require('fs').promises;
+      const path = require('path');
 
       const backup = await query(`
         SELECT * FROM data_backups WHERE id = $1 AND status = 'completed'
@@ -525,16 +527,40 @@ router.get('/backups/:backupId/download',
         throw new NotFoundError('Backup not found or not completed');
       }
 
-      res.json({
-        success: true,
-        message: 'Backup download link generated',
-        data: {
-          downloadUrl: `https://backups.edufam.com/school-backup/${backupId}.zip`,
-          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-          fileSize: backup.rows[0].file_size,
-          fileName: `school-backup-${backupId}.zip`
+      const backupRecord = backup.rows[0];
+      const filePath = backupRecord.file_path;
+
+      // Check if file exists
+      try {
+        await fs.access(filePath);
+      } catch (error) {
+        throw new NotFoundError('Backup file not found on disk');
+      }
+
+      // Set appropriate headers for file download
+      const fileName = `edufam-backup-${backupId}-${new Date(backupRecord.created_at).toISOString().split('T')[0]}.json`;
+      
+      res.setHeader('Content-Type', 'application/json');
+      res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+      res.setHeader('Content-Length', backupRecord.file_size);
+
+      // Stream the file
+      const fileStream = require('fs').createReadStream(filePath);
+      fileStream.pipe(res);
+
+      fileStream.on('error', (error) => {
+        console.error('Error streaming backup file:', error);
+        if (!res.headersSent) {
+          res.status(500).json({
+            success: false,
+            error: {
+              code: 'FILE_STREAM_ERROR',
+              message: 'Error reading backup file'
+            }
+          });
         }
       });
+
     } catch (error) {
       next(error);
     }

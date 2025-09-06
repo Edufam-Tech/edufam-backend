@@ -13,7 +13,7 @@ router.post(
 // View announcements for a given school
 router.get(
   '/announcements',
-  requireRole(['super_admin', 'regional_admin', 'support_admin']),
+  requireRole(['super_admin']),
   AdminCommunicationController.getAnnouncementsForSchool
 );
 

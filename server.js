@@ -83,17 +83,76 @@ app.get('/health', async (req, res) => {
   try {
     const dbConnected = await testConnection();
     
+    // Check for active maintenance mode with strict time logic
+    let maintenanceInfo = null;
+    let isMaintenanceActive = false;
+    
+    try {
+      const { query } = require('./src/config/database');
+      const now = new Date();
+      
+      const maintenanceResult = await query(`
+        SELECT 
+          is_active,
+          message,
+          scheduled_start,
+          scheduled_end
+        FROM maintenance_mode 
+        WHERE is_active = true
+        ORDER BY scheduled_start DESC
+      `);
+      
+      if (maintenanceResult.rows.length > 0) {
+        // Check time validity for each maintenance record
+        for (const record of maintenanceResult.rows) {
+          let shouldBeActive = true;
+          
+          // Check if maintenance should have started
+          if (record.scheduled_start) {
+            const startTime = new Date(record.scheduled_start);
+            if (now < startTime) {
+              shouldBeActive = false;
+            }
+          }
+          
+          // Check if maintenance has expired
+          if (record.scheduled_end) {
+            const endTime = new Date(record.scheduled_end);
+            if (now > endTime) {
+              shouldBeActive = false;
+            }
+          }
+          
+          if (shouldBeActive) {
+            maintenanceInfo = record;
+            isMaintenanceActive = true;
+            break;
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error checking maintenance mode in health endpoint:', error);
+    }
+    
+    // Always return 200 for health check, but include maintenance status
     res.json({ 
-      status: 'OK', 
-      message: 'Edufam Backend Server is running',
+      status: isMaintenanceActive ? 'MAINTENANCE' : 'OK', 
+      message: isMaintenanceActive 
+        ? (maintenanceInfo?.message || 'System is currently under maintenance')
+        : 'Edufam Backend Server is running',
       database: dbConnected ? 'Connected' : 'Disconnected',
       security: {
-        maintenance: process.env.MAINTENANCE_MODE === 'true',
+        maintenance: isMaintenanceActive,
         rateLimit: 'Active',
         cors: 'Configured',
         headers: 'Secured',
         tokenCleanup: tokenCleanup.isRunning ? 'Active' : 'Inactive'
       },
+      maintenance: isMaintenanceActive ? {
+        message: maintenanceInfo?.message || 'System maintenance in progress',
+        estimated_end_time: maintenanceInfo?.scheduled_end || null,
+        scheduled_start: maintenanceInfo?.scheduled_start || null
+      } : null,
       timestamp: new Date().toISOString(),
       environment: process.env.NODE_ENV || 'development',
       version: '1.0.0'
@@ -119,6 +178,43 @@ app.post('/', (req, res) => {
     hint: 'Login endpoint: POST /api/auth/login or /api/v1/auth/login'
   });
 });
+
+// Startup cleanup function to prevent random maintenance mode popups
+async function cleanupMaintenanceMode() {
+  try {
+    const { query } = require('./src/config/database');
+    const now = new Date();
+    
+    console.log('🧹 Cleaning up expired maintenance mode records...');
+    
+    // Clean up expired maintenance records
+    const result = await query(`
+      UPDATE maintenance_mode 
+      SET is_active = false, updated_at = CURRENT_TIMESTAMP
+      WHERE is_active = true 
+        AND (
+          (scheduled_end IS NOT NULL AND scheduled_end < $1) OR
+          (scheduled_start IS NOT NULL AND scheduled_start > $1)
+        )
+      RETURNING id, message, scheduled_start, scheduled_end
+    `, [now]);
+    
+    if (result.rows.length > 0) {
+      console.log(`✅ Cleaned up ${result.rows.length} expired maintenance record(s):`);
+      result.rows.forEach(record => {
+        console.log(`   - ${record.message || 'Maintenance'} (${record.scheduled_start} - ${record.scheduled_end})`);
+      });
+    } else {
+      console.log('✅ No expired maintenance records found');
+    }
+    
+  } catch (error) {
+    console.error('❌ Error during maintenance mode cleanup:', error);
+  }
+}
+
+// Run cleanup on startup
+cleanupMaintenanceMode();
 
 // Also respond to GET / to avoid noisy 404s from health/test probes
 app.get('/', (req, res) => {

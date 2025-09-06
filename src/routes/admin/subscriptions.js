@@ -35,7 +35,7 @@ router.post('/plans',
  * @access  Private (Platform Admin)
  */
 router.get('/plans/:id',
-  requireRole(['super_admin', 'admin_finance', 'regional_admin']),
+  requireRole(['super_admin', 'admin_finance']),
   SubscriptionController.getSubscriptionPlan
 );
 
@@ -69,7 +69,7 @@ router.delete('/plans/:id',
  * @access  Private (Platform Admin)
  */
 router.get('/schools',
-  requireRole(['super_admin', 'admin_finance', 'regional_admin']),
+  requireRole(['super_admin', 'admin_finance']),
   SubscriptionController.getSchoolSubscriptions
 );
 
@@ -89,7 +89,7 @@ router.post('/schools',
  * @access  Private (Platform Admin)
  */
 router.get('/schools/:subscriptionId',
-  requireRole(['super_admin', 'admin_finance', 'regional_admin']),
+  requireRole(['super_admin', 'admin_finance']),
   SubscriptionController.getSchoolSubscription
 );
 
@@ -163,7 +163,7 @@ router.post('/schools/:subscriptionId/downgrade',
  * @access  Private (Platform Admin)
  */
 router.get('/invoices',
-  requireRole(['super_admin', 'admin_finance', 'regional_admin']),
+  requireRole(['super_admin', 'admin_finance']),
   SubscriptionController.getSubscriptionInvoices
 );
 
@@ -183,7 +183,7 @@ router.post('/invoices/generate',
  * @access  Private (Platform Admin)
  */
 router.get('/invoices/:invoiceId',
-  requireRole(['super_admin', 'admin_finance', 'regional_admin']),
+  requireRole(['super_admin', 'admin_finance']),
   SubscriptionController.getSubscriptionInvoice
 );
 
@@ -311,7 +311,7 @@ router.get('/analytics/invoices',
  * @access  Private (Platform Admin)
  */
 router.get('/reports/summary',
-  requireRole(['super_admin', 'admin_finance', 'regional_admin']),
+  requireRole(['super_admin', 'admin_finance']),
   SubscriptionController.getSubscriptionSummary
 );
 

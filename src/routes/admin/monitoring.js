@@ -17,7 +17,7 @@ router.use(requireUserType('platform_admin'));
  * @access  Private (Platform Admin)
  */
 router.get('/health',
-  requireRole(['super_admin', 'support_admin', 'regional_admin']),
+  requireRole(['super_admin']),
   MonitoringController.getSystemHealthOverview
 );
 
@@ -27,7 +27,7 @@ router.get('/health',
  * @access  Private (Platform Admin)
  */
 router.get('/infrastructure',
-  requireRole(['super_admin', 'support_admin', 'regional_admin']),
+  requireRole(['super_admin']),
   MonitoringController.getInfrastructureDashboard
 );
 
@@ -37,7 +37,7 @@ router.get('/infrastructure',
  * @access  Private (Super Admin, Support Admin)
  */
 router.post('/health/check',
-  requireRole(['super_admin', 'support_admin']),
+  requireRole(['super_admin']),
   MonitoringController.performHealthCheck
 );
 
@@ -47,7 +47,7 @@ router.post('/health/check',
  * @access  Private (Super Admin, Support Admin)
  */
 router.get('/health/detailed',
-  requireRole(['super_admin', 'support_admin']),
+  requireRole(['super_admin']),
   async (req, res, next) => {
     try {
       // Set includeDetailed flag for comprehensive check
@@ -69,7 +69,7 @@ router.get('/health/detailed',
  * @access  Private (Platform Admin)
  */
 router.get('/performance',
-  requireRole(['super_admin', 'support_admin', 'regional_admin']),
+  requireRole(['super_admin']),
   MonitoringController.getPerformanceMetrics
 );
 
@@ -79,7 +79,7 @@ router.get('/performance',
  * @access  Private (Super Admin, Support Admin)
  */
 router.get('/performance/slow-queries',
-  requireRole(['super_admin', 'support_admin']),
+  requireRole(['super_admin']),
   MonitoringController.getSlowQueryAnalysis
 );
 
@@ -89,7 +89,7 @@ router.get('/performance/slow-queries',
  * @access  Private (Platform Admin)
  */
 router.get('/performance/real-time',
-  requireRole(['super_admin', 'support_admin']),
+  requireRole(['super_admin']),
   async (req, res, next) => {
     try {
       const { query } = require('../../config/database');
@@ -152,7 +152,7 @@ router.get('/performance/real-time',
  * @access  Private (Platform Admin)
  */
 router.get('/schools/:schoolId',
-  requireRole(['super_admin', 'support_admin', 'regional_admin']),
+  requireRole(['super_admin']),
   MonitoringController.getSchoolMonitoring
 );
 
@@ -162,7 +162,7 @@ router.get('/schools/:schoolId',
  * @access  Private (Platform Admin)
  */
 router.get('/mpesa/health',
-  requireRole(['super_admin', 'support_admin', 'regional_admin']),
+  requireRole(['super_admin']),
   MonitoringController.getMpesaHealth
 );
 
@@ -176,7 +176,7 @@ router.get('/mpesa/health',
  * @access  Private (Platform Admin)
  */
 router.get('/alerts',
-  requireRole(['super_admin', 'support_admin', 'regional_admin']),
+  requireRole(['super_admin']),
   MonitoringController.getAlerts
 );
 
@@ -186,7 +186,7 @@ router.get('/alerts',
  * @access  Private (Super Admin, Support Admin)
  */
 router.post('/alerts',
-  requireRole(['super_admin', 'support_admin']),
+  requireRole(['super_admin']),
   MonitoringController.createAlert
 );
 
@@ -196,7 +196,7 @@ router.post('/alerts',
  * @access  Private (Super Admin, Support Admin)
  */
 router.post('/alerts/:id/resolve',
-  requireRole(['super_admin', 'support_admin']),
+  requireRole(['super_admin']),
   MonitoringController.resolveAlert
 );
 
@@ -206,7 +206,7 @@ router.post('/alerts/:id/resolve',
  * @access  Private (Platform Admin)
  */
 router.get('/alerts/summary',
-  requireRole(['super_admin', 'support_admin', 'regional_admin']),
+  requireRole(['super_admin']),
   async (req, res, next) => {
     try {
       const { query } = require('../../config/database');
@@ -304,7 +304,7 @@ router.get('/alerts/summary',
  * @access  Private (Super Admin, Support Admin)
  */
 router.get('/alert-rules',
-  requireRole(['super_admin', 'support_admin']),
+  requireRole(['super_admin']),
   MonitoringController.getAlertRules
 );
 
@@ -432,7 +432,7 @@ router.delete('/alert-rules/:id',
  * @access  Private (Platform Admin)
  */
 router.get('/uptime',
-  requireRole(['super_admin', 'support_admin', 'regional_admin']),
+  requireRole(['super_admin']),
   MonitoringController.getUptimeStatistics
 );
 
@@ -442,7 +442,7 @@ router.get('/uptime',
  * @access  Private (Platform Admin)
  */
 router.get('/uptime/status-page',
-  requireRole(['super_admin', 'support_admin']),
+  requireRole(['super_admin']),
   async (req, res, next) => {
     try {
       const { query } = require('../../config/database');
@@ -515,7 +515,7 @@ router.get('/uptime/status-page',
  * @access  Private (Platform Admin)
  */
 router.get('/incidents',
-  requireRole(['super_admin', 'support_admin', 'regional_admin']),
+  requireRole(['super_admin']),
   async (req, res, next) => {
     try {
       const { query } = require('../../config/database');
@@ -548,7 +548,7 @@ router.get('/incidents',
  * @access  Private (Super Admin, Support Admin)
  */
 router.post('/incidents',
-  requireRole(['super_admin', 'support_admin']),
+  requireRole(['super_admin']),
   async (req, res, next) => {
     try {
       const { query } = require('../../config/database');
@@ -586,7 +586,7 @@ router.post('/incidents',
  * @access  Private (Super Admin, Support Admin)
  */
 router.post('/incidents/:id/update',
-  requireRole(['super_admin', 'support_admin']),
+  requireRole(['super_admin']),
   async (req, res, next) => {
     try {
       const { query } = require('../../config/database');
@@ -667,7 +667,7 @@ router.post('/incidents/:id/resolve',
  * @access  Private (Super Admin, Support Admin)
  */
 router.get('/logs',
-  requireRole(['super_admin', 'support_admin']),
+  requireRole(['super_admin']),
   MonitoringController.getSystemLogs
 );
 
@@ -677,7 +677,7 @@ router.get('/logs',
  * @access  Private (Super Admin, Support Admin)
  */
 router.get('/logs/analysis',
-  requireRole(['super_admin', 'support_admin']),
+  requireRole(['super_admin']),
   async (req, res, next) => {
     try {
       const { period = '24h' } = req.query;
@@ -768,7 +768,7 @@ router.get('/logs/analysis',
  * @access  Private (Platform Admin)
  */
 router.get('/dashboard',
-  requireRole(['super_admin', 'support_admin', 'regional_admin']),
+  requireRole(['super_admin']),
   async (req, res, next) => {
     try {
       const { query } = require('../../config/database');

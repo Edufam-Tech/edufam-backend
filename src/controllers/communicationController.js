@@ -505,6 +505,7 @@ class CommunicationController {
         priority: req.query.priority,
         isUrgent: req.query.isUrgent === 'true',
         isActive: req.query.isActive !== 'false',
+        adminOnly: req.query.admin_only === 'true',
         limit: parseInt(req.query.limit) || 20,
         offset: parseInt(req.query.offset) || 0
       };
@@ -512,7 +513,8 @@ class CommunicationController {
       let sql = `
         SELECT 
           a.*,
-          u.first_name || ' ' || u.last_name as created_by_name
+          u.first_name || ' ' || u.last_name as created_by_name,
+          u.role as created_by_role
         FROM announcements a
         JOIN users u ON a.created_by = u.id
         WHERE a.school_id = $1
@@ -520,6 +522,13 @@ class CommunicationController {
       
       const params = [req.user.schoolId];
       let paramCount = 1;
+
+      // Filter for admin announcements only if requested
+      if (filters.adminOnly) {
+        paramCount++;
+        sql += ` AND u.role = $${paramCount}`;
+        params.push('super_admin');
+      }
 
       // Apply filters
       if (filters.targetAudience) {
@@ -918,15 +927,15 @@ class CommunicationController {
       // Create a single notification and recipient rows for all users
       const notificationInsert = await query(`
         INSERT INTO notifications (
-          school_id, title, message, type, priority,
+          school_id, title, content, type, priority,
           created_by, created_at
         ) VALUES ($1, $2, $3, 'announcement', $4, $5, NOW())
         RETURNING id
       `, [
         announcement.school_id,
         announcement.title,
-        // The column is "message" in some schemas; fallback to content
-        announcement.content || announcement.message || '',
+        // Use content field from announcements table
+        announcement.content || '',
         announcement.priority || 'normal',
         announcement.created_by || null,
       ]);

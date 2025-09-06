@@ -742,7 +742,7 @@ class DataMigrationController {
           db.*,
           s.name as school_name
         FROM data_backups db
-        JOIN schools s ON db.school_id = s.id
+        LEFT JOIN schools s ON db.school_id::text = s.id::text
         ${whereClause}
         ORDER BY db.created_at DESC
         LIMIT $${params.length + 1} OFFSET $${params.length + 2}
@@ -830,15 +830,155 @@ class DataMigrationController {
     };
   }
 
-  // Process backup (simplified implementation)
+  // Process backup (enhanced implementation)
   static async processBackup(backup) {
-    // In production, this would create actual backup files
-    return {
-      status: 'completed',
-      fileSize: '15.2 MB',
-      recordCount: 5000,
-      downloadUrl: `https://backups.edufam.com/school-backup/${backup.id}.zip`
-    };
+    try {
+      const { id, school_id, backup_type, data_types } = backup;
+      
+      // Update backup status to processing
+      await query(`
+        UPDATE data_backups 
+        SET status = 'processing', 
+            started_at = CURRENT_TIMESTAMP
+        WHERE id = $1
+      `, [id]);
+
+      let backupData = {};
+      let totalRecords = 0;
+      let fileSize = 0;
+
+      // Define backup tables based on data types or backup type
+      const backupTables = data_types && data_types.length > 0 
+        ? data_types 
+        : this.getBackupTables(backup_type, school_id);
+
+      // Create backup data for each table
+      for (const tableName of backupTables) {
+        try {
+          const tableData = await this.backupTableData(tableName, school_id);
+          backupData[tableName] = tableData.rows;
+          totalRecords += tableData.rows.length;
+        } catch (error) {
+          console.error(`Error backing up table ${tableName}:`, error);
+          // Continue with other tables
+        }
+      }
+
+      // Create backup file (JSON format for now)
+      const backupFileName = `backup_${school_id}_${id}_${Date.now()}.json`;
+      const backupFilePath = path.join(__dirname, '../../../uploads/backups', backupFileName);
+      
+      // Ensure backup directory exists
+      await fs.mkdir(path.dirname(backupFilePath), { recursive: true });
+      
+      // Write backup file
+      const backupContent = {
+        metadata: {
+          backupId: id,
+          schoolId: school_id,
+          backupType: backup_type,
+          createdAt: new Date().toISOString(),
+          totalRecords: totalRecords,
+          tables: backupTables
+        },
+        data: backupData
+      };
+
+      await fs.writeFile(backupFilePath, JSON.stringify(backupContent, null, 2));
+      
+      // Get file size
+      const stats = await fs.stat(backupFilePath);
+      fileSize = stats.size;
+
+      // Update backup record with completion details
+      await query(`
+        UPDATE data_backups 
+        SET status = 'completed',
+            completed_at = CURRENT_TIMESTAMP,
+            file_size = $1,
+            file_path = $2,
+            backup_statistics = $3
+        WHERE id = $4
+      `, [
+        fileSize,
+        backupFilePath,
+        JSON.stringify({
+          totalRecords: totalRecords,
+          tablesBackedUp: backupTables.length,
+          fileSize: fileSize,
+          completedAt: new Date().toISOString()
+        }),
+        id
+      ]);
+
+      return {
+        status: 'completed',
+        fileSize: `${(fileSize / (1024 * 1024)).toFixed(2)} MB`,
+        recordCount: totalRecords,
+        downloadUrl: `/api/admin/migration/backups/${id}/download`,
+        filePath: backupFilePath
+      };
+
+    } catch (error) {
+      console.error('Error processing backup:', error);
+      
+      // Update backup status to failed
+      await query(`
+        UPDATE data_backups 
+        SET status = 'failed',
+            error_message = $1,
+            completed_at = CURRENT_TIMESTAMP
+        WHERE id = $2
+      `, [error.message, backup.id]);
+
+      throw error;
+    }
+  }
+
+  // Get backup tables based on backup type
+  static getBackupTables(backupType, schoolId) {
+    const baseTables = [
+      'users',
+      'students', 
+      'staff',
+      'academic_years',
+      'classes',
+      'subjects',
+      'timetable_entries',
+      'attendance_records',
+      'fee_structures',
+      'fee_payments',
+      'examinations',
+      'exam_results',
+      'announcements',
+      'school_settings'
+    ];
+
+    switch (backupType) {
+      case 'full':
+        return baseTables;
+      case 'incremental':
+        // For incremental, we'd typically backup only changed data
+        return baseTables;
+      case 'selective':
+        // Return only essential tables
+        return ['users', 'students', 'staff', 'academic_years', 'classes'];
+      default:
+        return baseTables;
+    }
+  }
+
+  // Backup data from a specific table
+  static async backupTableData(tableName, schoolId) {
+    // Use a generic approach to backup table data
+    // In production, you might want table-specific logic
+    const queryText = `
+      SELECT * FROM ${tableName} 
+      WHERE school_id = $1 OR school_id IS NULL
+      ORDER BY id
+    `;
+    
+    return await query(queryText, [schoolId]);
   }
 }
 

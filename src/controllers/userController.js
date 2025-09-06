@@ -237,7 +237,10 @@ class UserController {
       phone,
       userType,
       role,
-      schoolId
+      schoolId,
+      activationStatus,
+      emailVerified,
+      profilePictureUrl
     } = req.body;
 
     // Validate permissions based on user type being created
@@ -276,7 +279,10 @@ class UserController {
       phone,
       userType,
       role,
-      schoolId: finalSchoolId
+      schoolId: finalSchoolId,
+      activationStatus,
+      emailVerified,
+      profilePictureUrl
     }, req.user.userId);
 
     res.status(201).json({

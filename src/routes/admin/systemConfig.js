@@ -16,7 +16,7 @@ router.use(authenticate);
  * @access  Private (Platform Admin)
  */
 router.get('/settings',
-  requireRole(['super_admin', 'regional_admin']),
+  requireRole(['super_admin']),
   SystemConfigController.getSystemSettings
 );
 
@@ -26,7 +26,7 @@ router.get('/settings',
  * @access  Private (Platform Admin)
  */
 router.get('/settings/:key',
-  requireRole(['super_admin', 'regional_admin']),
+  requireRole(['super_admin']),
   SystemConfigController.getSystemSetting
 );
 
@@ -70,7 +70,7 @@ router.post('/settings/:key/reset',
  * @access  Private (Platform Admin)
  */
 router.get('/features',
-  requireRole(['super_admin', 'regional_admin']),
+  requireRole(['super_admin']),
   SystemConfigController.getFeatureToggles
 );
 
@@ -168,7 +168,7 @@ router.get('/notifications',
  * @access  Private (Super Admin, Regional Admin)
  */
 router.post('/notifications',
-  requireRole(['super_admin', 'regional_admin']),
+  requireRole(['super_admin']),
   SystemConfigController.createSystemNotification
 );
 
@@ -178,7 +178,7 @@ router.post('/notifications',
  * @access  Private (Super Admin, Regional Admin)
  */
 router.put('/notifications/:id',
-  requireRole(['super_admin', 'regional_admin']),
+  requireRole(['super_admin']),
   SystemConfigController.updateSystemNotification
 );
 

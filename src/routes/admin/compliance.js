@@ -17,7 +17,7 @@ router.use(requireUserType('platform_admin'));
  * @access  Private (Platform Admin)
  */
 router.get('/dashboard',
-  requireRole(['super_admin', 'compliance_admin', 'regional_admin']),
+  requireRole(['super_admin', 'compliance_admin']),
   ComplianceController.getComplianceDashboard
 );
 
@@ -27,7 +27,7 @@ router.get('/dashboard',
  * @access  Private (Platform Admin)
  */
 router.get('/summary',
-  requireRole(['super_admin', 'compliance_admin', 'regional_admin']),
+  requireRole(['super_admin', 'compliance_admin']),
   async (req, res, next) => {
     try {
       const { period = '30d', region } = req.query;
@@ -112,7 +112,7 @@ router.get('/summary',
  * @access  Private (Platform Admin)
  */
 router.get('/regulations',
-  requireRole(['super_admin', 'compliance_admin', 'regional_admin']),
+  requireRole(['super_admin', 'compliance_admin']),
   ComplianceController.getComplianceRegulations
 );
 
@@ -132,7 +132,7 @@ router.post('/regulations',
  * @access  Private (Platform Admin)
  */
 router.get('/regulations/:id',
-  requireRole(['super_admin', 'compliance_admin', 'regional_admin']),
+  requireRole(['super_admin', 'compliance_admin']),
   async (req, res, next) => {
     try {
       const { id } = req.params;
@@ -276,7 +276,7 @@ router.put('/regulations/:id',
  * @access  Private (Platform Admin)
  */
 router.get('/assessments',
-  requireRole(['super_admin', 'compliance_admin', 'regional_admin']),
+  requireRole(['super_admin', 'compliance_admin']),
   ComplianceController.getComplianceAssessments
 );
 
@@ -296,7 +296,7 @@ router.post('/assessments',
  * @access  Private (Platform Admin)
  */
 router.get('/assessments/:id',
-  requireRole(['super_admin', 'compliance_admin', 'regional_admin']),
+  requireRole(['super_admin', 'compliance_admin']),
   async (req, res, next) => {
     try {
       const { id } = req.params;
@@ -345,7 +345,7 @@ router.get('/assessments/:id',
  * @access  Private (Platform Admin)
  */
 router.get('/violations',
-  requireRole(['super_admin', 'compliance_admin', 'regional_admin']),
+  requireRole(['super_admin', 'compliance_admin']),
   ComplianceController.getComplianceViolations
 );
 
@@ -375,7 +375,7 @@ router.put('/violations/:id/status',
  * @access  Private (Platform Admin)
  */
 router.get('/violations/:id',
-  requireRole(['super_admin', 'compliance_admin', 'regional_admin']),
+  requireRole(['super_admin', 'compliance_admin']),
   async (req, res, next) => {
     try {
       const { id } = req.params;
@@ -433,7 +433,7 @@ router.get('/violations/:id',
  * @access  Private (Platform Admin)
  */
 router.get('/audits',
-  requireRole(['super_admin', 'compliance_admin', 'regional_admin']),
+  requireRole(['super_admin', 'compliance_admin']),
   ComplianceController.getComplianceAudits
 );
 
@@ -463,7 +463,7 @@ router.post('/audits/:id/complete',
  * @access  Private (Platform Admin)
  */
 router.get('/audits/:id',
-  requireRole(['super_admin', 'compliance_admin', 'regional_admin']),
+  requireRole(['super_admin', 'compliance_admin']),
   async (req, res, next) => {
     try {
       const { id } = req.params;
@@ -512,7 +512,7 @@ router.get('/audits/:id',
  * @access  Private (Platform Admin)
  */
 router.get('/actions',
-  requireRole(['super_admin', 'compliance_admin', 'regional_admin']),
+  requireRole(['super_admin', 'compliance_admin']),
   ComplianceController.getComplianceActions
 );
 
@@ -606,7 +606,7 @@ router.post('/reports/generate',
  * @access  Private (Platform Admin)
  */
 router.get('/reports',
-  requireRole(['super_admin', 'compliance_admin', 'regional_admin']),
+  requireRole(['super_admin', 'compliance_admin']),
   async (req, res, next) => {
     try {
       const { reportType, status, limit = 20, offset = 0 } = req.query;
@@ -657,7 +657,7 @@ router.get('/reports',
  * @access  Private (Platform Admin)
  */
 router.get('/reports/:id',
-  requireRole(['super_admin', 'compliance_admin', 'regional_admin']),
+  requireRole(['super_admin', 'compliance_admin']),
   async (req, res, next) => {
     try {
       const { id } = req.params;
@@ -695,7 +695,7 @@ router.get('/reports/:id',
  * @access  Private (Platform Admin)
  */
 router.get('/analytics/trends',
-  requireRole(['super_admin', 'compliance_admin', 'regional_admin']),
+  requireRole(['super_admin', 'compliance_admin']),
   async (req, res, next) => {
     try {
       const { period = '6m', category } = req.query;
@@ -777,7 +777,7 @@ router.get('/analytics/trends',
  * @access  Private (Platform Admin)
  */
 router.get('/analytics/schools',
-  requireRole(['super_admin', 'compliance_admin', 'regional_admin']),
+  requireRole(['super_admin', 'compliance_admin']),
   async (req, res, next) => {
     try {
       const { limit = 20, sortBy = 'score', order = 'desc' } = req.query;

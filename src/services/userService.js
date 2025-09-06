@@ -96,7 +96,10 @@ class UserService {
         phone,
         userType,
         role,
-        schoolId
+        schoolId,
+        activationStatus = 'pending',
+        emailVerified = false,
+        profilePictureUrl = null
       } = userData;
       
       // Check if email already exists
@@ -113,8 +116,8 @@ class UserService {
         INSERT INTO users (
           email, password_hash, user_type, role, school_id,
           first_name, last_name, phone, created_by,
-          activation_status, password_changed_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
+          activation_status, email_verified, profile_picture_url, password_changed_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW())
         RETURNING id, email, role, user_type, school_id, 
                   first_name, last_name, created_at
       `, [
@@ -127,7 +130,9 @@ class UserService {
         lastName,
         phone || null,
         createdBy,
-        'pending' // New users start as pending
+        activationStatus,
+        emailVerified,
+        profilePictureUrl
       ]);
       
       const newUser = result.rows[0];

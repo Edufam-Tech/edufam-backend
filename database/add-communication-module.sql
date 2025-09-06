@@ -88,10 +88,11 @@ CREATE TABLE announcements (
     target_audience VARCHAR(20) DEFAULT 'all' CHECK (target_audience IN ('all', 'students', 'parents', 'teachers', 'staff')),
     priority VARCHAR(10) DEFAULT 'normal' CHECK (priority IN ('low', 'normal', 'high', 'urgent')),
     
-    -- Visibility
+    -- Visibility and scheduling
     is_urgent BOOLEAN DEFAULT false,
     is_published BOOLEAN DEFAULT true,
     expires_at TIMESTAMP,
+    scheduled_at TIMESTAMP,
     
     -- Metadata
     created_by UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,

@@ -215,7 +215,7 @@ router.get('/finance/clv-by-category',
  * @access  Private (Platform Admin)
  */
 router.get('/geographic',
-  requireRole(['super_admin', 'regional_admin']),
+  requireRole(['super_admin']),
   PlatformAnalyticsController.getGeographicAnalytics
 );
 
@@ -225,7 +225,7 @@ router.get('/geographic',
  * @access  Private (Super Admin, Regional Admin)
  */
 router.get('/regions/:regionId',
-  requireRole(['super_admin', 'regional_admin']),
+  requireRole(['super_admin']),
   async (req, res, next) => {
     try {
       const { query } = require('../../config/database');
@@ -333,7 +333,7 @@ router.get('/compare',
  * @access  Private (Platform Admin)
  */
 router.get('/benchmarks',
-  requireRole(['super_admin', 'regional_admin']),
+  requireRole(['super_admin']),
   async (req, res, next) => {
     try {
       const { query } = require('../../config/database');

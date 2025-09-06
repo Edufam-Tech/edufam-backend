@@ -207,42 +207,116 @@ const requestLogger = (req, res, next) => {
   next();
 };
 
-// Maintenance mode middleware
+// Maintenance mode middleware - only for school application routes
 const checkMaintenanceMode = async (req, res, next) => {
   try {
-    // Skip maintenance check for health endpoints
-    if (req.path === '/health' || req.path === '/api') {
+    // Skip maintenance check for health endpoints, admin routes, and critical operations
+    if (req.path === '/health' || 
+        req.path === '/api' || 
+        req.path.startsWith('/admin/') ||
+        req.path.startsWith('/auth/') ||
+        req.path.includes('/backup') ||
+        req.path.includes('/migration')) {
       return next();
     }
     
-    // Check DB maintenance table first; fallback to env var
+    // Allow bypass if explicitly set by bypassMaintenance middleware
+    if (req.bypassMaintenance) {
+      return next();
+    }
+    
+    // Allow super admin to bypass maintenance mode
+    if (req.user && req.user.role === 'super_admin') {
+      return next();
+    }
+    
+    // Check DB maintenance table with strict time logic
     let maintenanceMode = false;
+    let maintenanceInfo = null;
+    
     try {
       const { query } = require('../config/database');
+      const now = new Date();
+      
+      // Get all active maintenance records
       const result = await query(`
         SELECT *
         FROM maintenance_mode
         WHERE is_active = true
         ORDER BY scheduled_start DESC
-        LIMIT 1
       `);
+      
       if (result.rows.length > 0) {
-        maintenanceMode = true;
-        const allowedIps = Array.isArray(result.rows[0].allowed_ips) ? result.rows[0].allowed_ips : [];
-        const ip = req.ip || req.connection?.remoteAddress || '';
-        if (allowedIps.includes(ip)) {
-          return next();
+        // Process each maintenance record to check time validity
+        for (const record of result.rows) {
+          let shouldBeActive = true;
+          let needsUpdate = false;
+          
+          // Check if maintenance should have started
+          if (record.scheduled_start) {
+            const startTime = new Date(record.scheduled_start);
+            if (now < startTime) {
+              shouldBeActive = false;
+              needsUpdate = true;
+              console.log(`🕐 Maintenance mode not yet started (scheduled for ${startTime.toISOString()})`);
+            }
+          }
+          
+          // Check if maintenance has expired
+          if (record.scheduled_end) {
+            const endTime = new Date(record.scheduled_end);
+            if (now > endTime) {
+              shouldBeActive = false;
+              needsUpdate = true;
+              console.log(`🕐 Maintenance mode expired (ended at ${endTime.toISOString()})`);
+            }
+          }
+          
+          // Update record if needed
+          if (needsUpdate) {
+            await query(`
+              UPDATE maintenance_mode 
+              SET is_active = false, updated_at = CURRENT_TIMESTAMP
+              WHERE id = $1
+            `, [record.id]);
+          }
+          
+          // If this record should be active, use it
+          if (shouldBeActive) {
+            maintenanceInfo = record;
+            maintenanceMode = true;
+            break; // Use the most recent valid maintenance record
+          }
         }
-        // Attach details for downstream handlers if needed
-        req.__maintenance = {
-          message: result.rows[0].message || null,
-          estimated_end_time: result.rows[0].scheduled_end || null
-        };
-      } else {
-        maintenanceMode = process.env.MAINTENANCE_MODE === 'true';
+        
+        // If we found a valid maintenance record
+        if (maintenanceMode && maintenanceInfo) {
+          // Check for allowed IPs
+          const allowedIps = Array.isArray(maintenanceInfo.allowed_ips) ? maintenanceInfo.allowed_ips : [];
+          const ip = req.ip || req.connection?.remoteAddress || '';
+          if (allowedIps.includes(ip)) {
+            return next();
+          }
+          
+          // Attach details for downstream handlers
+          req.__maintenance = {
+            message: maintenanceInfo.message || null,
+            estimated_end_time: maintenanceInfo.scheduled_end || null,
+            scheduled_start: maintenanceInfo.scheduled_start || null
+          };
+        }
       }
-    } catch {
-      maintenanceMode = process.env.MAINTENANCE_MODE === 'true';
+      
+      // Only fallback to environment variable if no database records exist
+      if (!maintenanceMode && result.rows.length === 0) {
+        // Don't use environment variable fallback to prevent random popups
+        maintenanceMode = false;
+      }
+      
+    } catch (error) {
+      console.error('Error checking maintenance mode:', error);
+      // Don't fallback to environment variable to prevent random popups
+      maintenanceMode = false;
     }
 
     if (maintenanceMode) {
@@ -250,10 +324,11 @@ const checkMaintenanceMode = async (req, res, next) => {
         success: false,
         error: {
           code: 'MAINTENANCE_MODE',
-          message: (req.__maintenance?.message) || 'System is currently under maintenance. Please try again later.'
+          message: (req.__maintenance?.message) || 'System maintenance in progress. Kindly be patient as we resolve some issues.\nThank you'
         },
         maintenance: true,
-        estimated_end_time: req.__maintenance?.estimated_end_time || null
+        estimated_end_time: req.__maintenance?.estimated_end_time || null,
+        scheduled_start: req.__maintenance?.scheduled_start || null
       });
     }
     

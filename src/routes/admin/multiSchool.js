@@ -6,6 +6,20 @@ const MultiSchoolController = require('../../controllers/admin/multiSchoolContro
 // Admin authentication is applied at router.mount in routes/index.js via adminAuth
 
 // =============================================================================
+// DIRECT SCHOOL CREATION ROUTES
+// =============================================================================
+
+/**
+ * @route   POST /api/admin/multi-school/schools
+ * @desc    Create a new school directly (Super Admin and Support HR only)
+ * @access  Private (Super Admin, Support HR)
+ */
+router.post('/schools',
+  requireRole(['super_admin', 'support_hr']),
+  MultiSchoolController.createSchool
+);
+
+// =============================================================================
 // SCHOOL ONBOARDING ROUTES
 // =============================================================================
 
@@ -15,7 +29,7 @@ const MultiSchoolController = require('../../controllers/admin/multiSchoolContro
  * @access  Private (Platform Admin)
  */
 router.post('/onboarding',
-  requireRole(['super_admin', 'regional_admin']),
+  requireRole(['super_admin']),
   MultiSchoolController.createOnboardingRequest
 );
 
@@ -25,7 +39,7 @@ router.post('/onboarding',
  * @access  Private (Platform Admin)
  */
 router.get('/onboarding',
-  requireRole(['super_admin', 'regional_admin', 'support_admin']),
+  requireRole(['super_admin']),
   MultiSchoolController.getOnboardingRequests
 );
 
@@ -35,7 +49,7 @@ router.get('/onboarding',
  * @access  Private (Super Admin, Regional Admin)
  */
 router.put('/onboarding/:id/assign',
-  requireRole(['super_admin', 'regional_admin']),
+  requireRole(['super_admin']),
   MultiSchoolController.assignOnboardingRequest
 );
 
@@ -45,7 +59,7 @@ router.put('/onboarding/:id/assign',
  * @access  Private (Super Admin, Regional Admin)
  */
 router.put('/onboarding/:id/review',
-  requireRole(['super_admin', 'regional_admin']),
+  requireRole(['super_admin']),
   MultiSchoolController.reviewOnboardingRequest
 );
 
@@ -55,7 +69,7 @@ router.put('/onboarding/:id/review',
  * @access  Private (Super Admin, Regional Admin)
  */
 router.post('/onboarding/:id/complete',
-  requireRole(['super_admin', 'regional_admin']),
+  requireRole(['super_admin']),
   MultiSchoolController.completeOnboarding
 );
 
@@ -69,7 +83,7 @@ router.post('/onboarding/:id/complete',
  * @access  Private (Platform Admin)
  */
 router.get('/schools',
-  requireRole(['super_admin', 'regional_admin', 'support_admin', 'support_hr']),
+  requireRole(['super_admin', 'support_hr']),
   MultiSchoolController.getAllSchools
 );
 
@@ -79,7 +93,7 @@ router.get('/schools',
  * @access  Private (Platform Admin)
  */
 router.get('/schools/:id',
-  requireRole(['super_admin', 'regional_admin', 'support_admin', 'support_hr']),
+  requireRole(['super_admin', 'support_hr']),
   MultiSchoolController.getSchoolDetails
 );
 
@@ -89,7 +103,7 @@ router.get('/schools/:id',
  * @access  Private (Super Admin, Regional Admin)
  */
 router.put('/schools/:id/suspend',
-  requireRole(['super_admin', 'regional_admin', 'support_hr']),
+  requireRole(['super_admin', 'support_hr']),
   MultiSchoolController.suspendSchool
 );
 
@@ -99,7 +113,7 @@ router.put('/schools/:id/suspend',
  * @access  Private (Super Admin, Regional Admin)
  */
 router.put('/schools/:id/reactivate',
-  requireRole(['super_admin', 'regional_admin', 'support_hr']),
+  requireRole(['super_admin', 'support_hr']),
   MultiSchoolController.reactivateSchool
 );
 
@@ -109,7 +123,7 @@ router.put('/schools/:id/reactivate',
  * @access  Private (Platform Admin)
  */
 router.get('/schools/:id/users',
-  requireRole(['super_admin', 'regional_admin', 'support_admin', 'support_hr']),
+  requireRole(['super_admin', 'support_hr']),
   async (req, res, next) => {
     try {
       const { query } = require('../../config/database');
@@ -132,7 +146,7 @@ router.get('/schools/:id/users',
       const result = await query(`
         SELECT 
           u.id, u.first_name, u.last_name, u.email, u.phone, u.user_type, 
-          u.role, u.is_active, u.last_login_at, u.created_at,
+          u.role, u.is_active, u.activation_status, u.last_login_at, u.created_at,
           s.name as school_name
         FROM users u
         JOIN schools s ON u.school_id = s.id
@@ -162,7 +176,7 @@ router.get('/schools/:id/users',
  * @access  Private (Platform Admin)
  */
 router.get('/users',
-  requireRole(['super_admin', 'regional_admin', 'support_admin', 'support_hr']),
+  requireRole(['super_admin', 'support_hr']),
   async (req, res, next) => {
     try {
       const { query } = require('../../config/database');
@@ -241,7 +255,7 @@ router.get('/users',
  * @access  Private (Platform Admin)
  */
 router.get('/schools/:id/metrics',
-  requireRole(['super_admin', 'regional_admin', 'support_admin', 'support_hr']),
+  requireRole(['super_admin', 'support_hr']),
   async (req, res, next) => {
     try {
       const { query } = require('../../config/database');
@@ -317,7 +331,7 @@ router.get('/schools/:id/metrics',
  * @access  Private (Super Admin, Regional Admin)
  */
 router.post('/schools/:schoolId/oversight',
-  requireRole(['super_admin', 'regional_admin']),
+  requireRole(['super_admin']),
   MultiSchoolController.createOversightRecord
 );
 
@@ -327,7 +341,7 @@ router.post('/schools/:schoolId/oversight',
  * @access  Private (Platform Admin)
  */
 router.get('/schools/:schoolId/oversight',
-  requireRole(['super_admin', 'regional_admin', 'support_admin', 'compliance_admin']),
+  requireRole(['super_admin', 'compliance_admin']),
   MultiSchoolController.getOversightRecords
 );
 
@@ -337,7 +351,7 @@ router.get('/schools/:schoolId/oversight',
  * @access  Private (Super Admin, Regional Admin)
  */
 router.put('/oversight/:id',
-  requireRole(['super_admin', 'regional_admin']),
+  requireRole(['super_admin']),
   MultiSchoolController.updateOversightRecord
 );
 
@@ -347,7 +361,7 @@ router.put('/oversight/:id',
  * @access  Private (Platform Admin)
  */
 router.get('/oversight/dashboard',
-  requireRole(['super_admin', 'regional_admin', 'compliance_admin', 'support_hr']),
+  requireRole(['super_admin', 'compliance_admin', 'support_hr']),
   async (req, res, next) => {
     try {
       const { query } = require('../../config/database');
@@ -416,7 +430,7 @@ router.get('/oversight/dashboard',
  * @access  Private (Platform Admin)
  */
 router.get('/regions',
-  requireRole(['super_admin', 'regional_admin', 'support_admin']),
+  requireRole(['super_admin']),
   MultiSchoolController.getPlatformRegions
 );
 

@@ -520,42 +520,28 @@ class SystemConfigController {
   // Get maintenance mode status
   static async getMaintenanceMode(req, res, next) {
     try {
-      let result;
-      try {
-        result = await query(`
-          SELECT 
-            id,
-            is_active,
-            message,
-            allowed_ips,
-            scheduled_start,
-            scheduled_end
-          FROM maintenance_mode 
-          WHERE is_active = true
-          ORDER BY scheduled_start DESC
-          LIMIT 1
-        `);
-      } catch (e) {
-        // Fallback for environments without allowed_ips column
-        result = await query(`
-          SELECT 
-            id,
-            is_active,
-            message,
-            scheduled_start,
-            scheduled_end
-          FROM maintenance_mode 
-          WHERE is_active = true
-          ORDER BY scheduled_start DESC
-          LIMIT 1
-        `);
-      }
+      const result = await query(`
+        SELECT 
+          id,
+          is_active,
+          message,
+          allowed_ips,
+          scheduled_start,
+          scheduled_end,
+          scope
+        FROM maintenance_mode 
+        WHERE is_active = true
+        ORDER BY scheduled_start DESC
+        LIMIT 1
+      `);
 
       const maintenanceMode = result.rows[0] || {
         is_active: false,
         message: null,
+        allowed_ips: [],
         scheduled_start: null,
-        scheduled_end: null
+        scheduled_end: null,
+        scope: 'platform'
       };
 
       res.json({
@@ -563,7 +549,19 @@ class SystemConfigController {
         data: maintenanceMode
       });
     } catch (error) {
-      next(error);
+      console.error('Error getting maintenance mode:', error);
+      // Return default inactive state on error
+      res.json({
+        success: true,
+        data: {
+          is_active: false,
+          message: null,
+          allowed_ips: [],
+          scheduled_start: null,
+          scheduled_end: null,
+          scope: 'platform'
+        }
+      });
     }
   }
 
@@ -573,45 +571,60 @@ class SystemConfigController {
       const {
         message = 'System maintenance in progress. Please try again later.',
         estimatedEndTime,
+        scheduledStartTime,
         allowedIps = []
       } = req.body;
+
+      // Validate time inputs
+      const now = new Date();
+      let scheduledStart = null;
+      let scheduledEnd = null;
+
+      if (scheduledStartTime) {
+        scheduledStart = new Date(scheduledStartTime);
+        if (scheduledStart <= now) {
+          throw new ValidationError('Scheduled start time must be in the future');
+        }
+      }
+
+      if (estimatedEndTime) {
+        scheduledEnd = new Date(estimatedEndTime);
+        if (scheduledStart && scheduledEnd <= scheduledStart) {
+          throw new ValidationError('End time must be after start time');
+        }
+        if (!scheduledStart && scheduledEnd <= now) {
+          throw new ValidationError('End time must be in the future when no start time is specified');
+        }
+      }
 
       // Disable any existing maintenance mode
       await query(`
         UPDATE maintenance_mode 
-        SET is_active = false
+        SET is_active = false, updated_at = CURRENT_TIMESTAMP
         WHERE is_active = true
       `);
 
       // Create new maintenance mode
-      let result;
-      try {
-        result = await query(`
-          INSERT INTO maintenance_mode (
-            is_active, message, allowed_ips, scheduled_start, scheduled_end,
-            created_by
-          ) VALUES (true, $1, $2::inet[], NOW(), $3, $4)
-          RETURNING id, is_active, message, allowed_ips, scheduled_start, scheduled_end
-        `, [
-          message,
-          Array.isArray(allowedIps) ? allowedIps : [],
-          estimatedEndTime || null,
-          req.user.userId
-        ]);
-      } catch (e) {
-        // Fallback for environments without allowed_ips column
-        result = await query(`
-          INSERT INTO maintenance_mode (
-            is_active, message, scheduled_start, scheduled_end,
-            created_by
-          ) VALUES (true, $1, NOW(), $2, $3)
-          RETURNING id, is_active, message, scheduled_start, scheduled_end
-        `, [
-          message,
-          estimatedEndTime || null,
-          req.user.userId
-        ]);
-      }
+      const result = await query(`
+        INSERT INTO maintenance_mode (
+          is_active, message, allowed_ips, scheduled_start, scheduled_end,
+          created_by, scope
+        ) VALUES (true, $1, $2::inet[], $3, $4, $5, 'platform')
+        RETURNING id, is_active, message, allowed_ips, scheduled_start, scheduled_end, scope, created_at
+      `, [
+        message,
+        Array.isArray(allowedIps) ? allowedIps : [],
+        scheduledStart || now, // Use current time if no start time specified
+        scheduledEnd,
+        req.user.userId
+      ]);
+
+      console.log(`🔧 Maintenance mode enabled by ${req.user.email}:`, {
+        message,
+        scheduledStart: scheduledStart || now,
+        scheduledEnd,
+        allowedIps: allowedIps.length
+      });
 
       res.json({
         success: true,
@@ -621,6 +634,7 @@ class SystemConfigController {
         }
       });
     } catch (error) {
+      console.error('Error enabling maintenance mode:', error);
       next(error);
     }
   }
@@ -628,30 +642,40 @@ class SystemConfigController {
   // Disable maintenance mode
   static async disableMaintenanceMode(req, res, next) {
     try {
-      let result;
-      try {
-        result = await query(`
-          UPDATE maintenance_mode 
-          SET is_active = false,
-              updated_at = CURRENT_TIMESTAMP,
-              created_by = COALESCE(created_by, $1)
-          WHERE is_active = true
-          RETURNING id, is_active, message, allowed_ips, scheduled_start, scheduled_end
-        `, [req.user.userId]);
-      } catch (e) {
-        // Fallback for environments without allowed_ips column
-        result = await query(`
-          UPDATE maintenance_mode 
-          SET is_active = false,
-              updated_at = CURRENT_TIMESTAMP,
-              created_by = COALESCE(created_by, $1)
-          WHERE is_active = true
-          RETURNING id, is_active, message, scheduled_start, scheduled_end
-        `, [req.user.userId]);
-      }
+      // First, get the current maintenance mode info for logging
+      const currentMaintenance = await query(`
+        SELECT id, message, scheduled_start, scheduled_end, created_by
+        FROM maintenance_mode 
+        WHERE is_active = true
+        ORDER BY scheduled_start DESC
+        LIMIT 1
+      `);
+
+      const result = await query(`
+        UPDATE maintenance_mode 
+        SET is_active = false,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE is_active = true
+        RETURNING id, is_active, message, allowed_ips, scheduled_start, scheduled_end, scope
+      `);
 
       if (result.rows.length === 0) {
-        throw new NotFoundError('No active maintenance mode found');
+        return res.json({
+          success: true,
+          message: 'No active maintenance mode found',
+          data: { is_active: false }
+        });
+      }
+
+      // Log the disable action
+      if (currentMaintenance.rows.length > 0) {
+        const maintenance = currentMaintenance.rows[0];
+        console.log(`🔧 Maintenance mode disabled by ${req.user.email}:`, {
+          message: maintenance.message,
+          scheduledStart: maintenance.scheduled_start,
+          scheduledEnd: maintenance.scheduled_end,
+          originalCreator: maintenance.created_by
+        });
       }
 
       res.json({
@@ -660,6 +684,7 @@ class SystemConfigController {
         data: result.rows[0]
       });
     } catch (error) {
+      console.error('Error disabling maintenance mode:', error);
       next(error);
     }
   }

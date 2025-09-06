@@ -39,7 +39,7 @@ router.post('/',
  * @access  Private (Super Admin, Support HR, Regional Admin)
  */
 router.post('/school',
-  requireRole(['super_admin', 'support_hr', 'regional_admin']),
+  requireRole(['super_admin', 'support_hr']),
   async (req, res, next) => {
     try {
       // Force school user type
@@ -76,7 +76,7 @@ router.get('/statistics',
  * @access  Private (Platform Admin)
  */
 router.get('/roles-permissions',
-  requireRole(['super_admin', 'regional_admin']),
+  requireRole(['super_admin']),
   AdminUserController.getRolesAndPermissions
 );
 

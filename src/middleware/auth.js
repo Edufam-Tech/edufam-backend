@@ -357,9 +357,10 @@ const validateSchoolAccess = (req, res, next) => {
   next();
 };
 
-// Check maintenance mode bypass (super admin only)
+// Check maintenance mode bypass (admin users only)
 const bypassMaintenance = (req, res, next) => {
-  if (req.user && req.user.role === 'super_admin') {
+  // Allow all admin dashboard users to bypass maintenance mode
+  if (req.user && ADMIN_DASHBOARD_ROLES.includes(req.user.role)) {
     req.bypassMaintenance = true;
   }
   next();

@@ -17,7 +17,7 @@ router.use(requireUserType('platform_admin'));
  * @access  Private (Platform Admin)
  */
 router.get('/',
-  requireRole(['super_admin', 'regional_admin']),
+  requireRole(['super_admin']),
   IntegrationController.getIntegrations
 );
 
@@ -37,7 +37,7 @@ router.post('/',
  * @access  Private (Platform Admin)
  */
 router.get('/:id',
-  requireRole(['super_admin', 'regional_admin']),
+  requireRole(['super_admin']),
   IntegrationController.getIntegration
 );
 
@@ -115,7 +115,7 @@ router.delete('/:id',
  * @access  Private (Platform Admin)
  */
 router.get('/templates',
-  requireRole(['super_admin', 'regional_admin']),
+  requireRole(['super_admin']),
   IntegrationController.getIntegrationTemplates
 );
 
@@ -210,7 +210,7 @@ router.put('/templates/:templateId',
  * @access  Private (Platform Admin)
  */
 router.get('/webhooks',
-  requireRole(['super_admin', 'regional_admin']),
+  requireRole(['super_admin']),
   IntegrationController.getWebhooks
 );
 
@@ -318,7 +318,7 @@ router.post('/webhooks/:webhookId/test',
  * @access  Private (Platform Admin)
  */
 router.get('/webhooks/:webhookId/deliveries',
-  requireRole(['super_admin', 'regional_admin']),
+  requireRole(['super_admin']),
   async (req, res, next) => {
     try {
       const { webhookId } = req.params;
@@ -500,7 +500,7 @@ router.delete('/oauth/:configId',
  * @access  Private (Platform Admin)
  */
 router.get('/analytics',
-  requireRole(['super_admin', 'regional_admin']),
+  requireRole(['super_admin']),
   IntegrationController.getIntegrationAnalytics
 );
 
@@ -510,7 +510,7 @@ router.get('/analytics',
  * @access  Private (Platform Admin)
  */
 router.get('/:id/analytics',
-  requireRole(['super_admin', 'regional_admin']),
+  requireRole(['super_admin']),
   async (req, res, next) => {
     try {
       const { id } = req.params;
@@ -528,7 +528,7 @@ router.get('/:id/analytics',
  * @access  Private (Platform Admin)
  */
 router.get('/analytics/summary',
-  requireRole(['super_admin', 'regional_admin']),
+  requireRole(['super_admin']),
   async (req, res, next) => {
     try {
       const { period = '7d' } = req.query;
@@ -612,7 +612,7 @@ router.get('/analytics/summary',
  * @access  Private (Platform Admin)
  */
 router.get('/logs',
-  requireRole(['super_admin', 'regional_admin']),
+  requireRole(['super_admin']),
   IntegrationController.getIntegrationLogs
 );
 
@@ -622,7 +622,7 @@ router.get('/logs',
  * @access  Private (Platform Admin)
  */
 router.get('/:id/logs',
-  requireRole(['super_admin', 'regional_admin']),
+  requireRole(['super_admin']),
   async (req, res, next) => {
     try {
       const { id } = req.params;

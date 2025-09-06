@@ -89,19 +89,34 @@ router.get('/announcements/recent',
   async (req, res, next) => {
     try {
       const days = parseInt(req.query.days || '7', 10);
-      const result = await query(`
+      const adminOnly = req.query.admin_only === 'true';
+      
+      let sql = `
         SELECT 
-          id,
-          title,
-          content AS message,
-          created_at,
-          target_audience
-        FROM announcements
-        WHERE school_id = $1
-          AND created_at >= CURRENT_DATE - INTERVAL '${days} days'
-        ORDER BY created_at DESC
-        LIMIT 20
-      `, [req.user.schoolId]);
+          a.id,
+          a.title,
+          a.content AS message,
+          a.created_at,
+          a.target_audience,
+          a.priority,
+          a.is_urgent,
+          u.first_name || ' ' || u.last_name as created_by_name,
+          u.role as created_by_role
+        FROM announcements a
+        JOIN users u ON a.created_by = u.id
+        WHERE a.school_id = $1
+          AND a.created_at >= CURRENT_DATE - INTERVAL '${days} days'
+      `;
+      
+      const params = [req.user.schoolId];
+      
+      if (adminOnly) {
+        sql += ` AND u.role = 'super_admin'`;
+      }
+      
+      sql += ` ORDER BY a.is_urgent DESC, a.created_at DESC LIMIT 20`;
+      
+      const result = await query(sql, params);
       res.json({ success: true, data: result.rows });
     } catch (error) { next(error); }
   }
