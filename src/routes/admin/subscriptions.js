@@ -209,12 +209,22 @@ router.post('/invoices/:invoiceId/payment',
 
 /**
  * @route   POST /api/admin/subscriptions/invoices/:invoiceId/void
- * @desc    Void invoice
- * @access  Private (Super Admin)
+ * @desc    Void subscription invoice
+ * @access  Private (Super Admin, Finance Admin)
  */
 router.post('/invoices/:invoiceId/void',
-  requireRole(['super_admin']),
+  requireRole(['super_admin', 'admin_finance']),
   SubscriptionController.voidInvoice
+);
+
+/**
+ * @route   PUT /api/admin/subscriptions/invoices/:invoiceId/mark-paid
+ * @desc    Mark subscription invoice as paid
+ * @access  Private (Super Admin, Finance Admin)
+ */
+router.put('/invoices/:invoiceId/mark-paid',
+  requireRole(['super_admin', 'admin_finance']),
+  SubscriptionController.markInvoiceAsPaid
 );
 
 // =============================================================================
@@ -283,6 +293,16 @@ router.get('/analytics/churn',
 router.get('/analytics/growth',
   requireRole(['super_admin', 'admin_finance']),
   SubscriptionController.getGrowthAnalytics
+);
+
+/**
+ * @route   GET /api/admin/subscriptions/analytics/invoices
+ * @desc    Get invoice analytics
+ * @access  Private (Super Admin, Finance Admin)
+ */
+router.get('/analytics/invoices',
+  requireRole(['super_admin', 'admin_finance']),
+  SubscriptionController.getInvoiceAnalytics
 );
 
 /**

@@ -65,8 +65,9 @@ class AuthController {
     // Reset failed login attempts on successful login
     await authService.resetFailedLoginAttempts(user.id);
 
-    // Allow admin users (admin application), school users (school application), and parents (mobile)
-    if (!['school_user', 'admin_user', 'parent'].includes(user.user_type)) {
+    // Allow admin users (admin application) and school users (school application + mobile)
+    // Mobile app supports all school roles: school_director, principal, teacher, hr, finance, parent
+    if (!['school_user', 'admin_user'].includes(user.user_type)) {
       throw new AuthenticationError('Account type not allowed');
     }
 

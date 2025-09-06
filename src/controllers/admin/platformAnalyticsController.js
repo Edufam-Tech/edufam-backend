@@ -438,7 +438,7 @@ class PlatformAnalyticsController {
             AVG(si.total_amount) as avg_invoice_amount
           FROM subscription_invoices si
           JOIN school_subscriptions ss ON si.subscription_id = ss.id
-          JOIN subscription_plans sp ON ss.plan_id = sp.id
+          JOIN subscription_plans sp ON ss.subscription_plan_id = sp.id
           JOIN schools s ON si.school_id = s.id
           LEFT JOIN school_onboarding_requests sor ON s.email = sor.principal_email
           LEFT JOIN platform_regions pr ON sor.region_id = pr.id
@@ -457,7 +457,7 @@ class PlatformAnalyticsController {
             SUM(si.amount_paid) as collected_revenue,
             AVG(si.total_amount) as avg_revenue_per_invoice
           FROM subscription_plans sp
-          JOIN school_subscriptions ss ON sp.id = ss.plan_id
+          JOIN school_subscriptions ss ON sp.id = ss.subscription_plan_id
           JOIN subscription_invoices si ON ss.id = si.subscription_id
           WHERE ss.subscription_status = 'active' ${dateFilter.replace('si.', 'si.')}
           GROUP BY sp.id, sp.plan_name, sp.plan_type
@@ -500,16 +500,16 @@ class PlatformAnalyticsController {
         // Churn analysis
         query(`
           SELECT 
-            DATE_TRUNC('month', cancelled_at) as month,
+            DATE_TRUNC('month', ss.cancelled_at) as month,
             COUNT(*) as churned_subscriptions,
-            SUM(monthly_cost) as churned_mrr,
+            SUM(ss.monthly_cost) as churned_mrr,
             AVG(
-              EXTRACT(DAYS FROM cancelled_at - start_date)
+              EXTRACT(DAYS FROM ss.cancelled_at - ss.start_date)
             ) as avg_subscription_lifetime_days
-          FROM school_subscriptions
-          WHERE cancelled_at IS NOT NULL
-            AND cancelled_at >= CURRENT_DATE - INTERVAL '12 months'
-          GROUP BY DATE_TRUNC('month', cancelled_at)
+          FROM school_subscriptions ss
+          WHERE ss.cancelled_at IS NOT NULL
+            AND ss.cancelled_at >= CURRENT_DATE - INTERVAL '12 months'
+          GROUP BY DATE_TRUNC('month', ss.cancelled_at)
           ORDER BY month DESC
         `)
       ]);
@@ -694,7 +694,7 @@ class PlatformAnalyticsController {
             MAX(pul.logged_at) as last_activity
           FROM schools s
           JOIN school_subscriptions ss ON s.id = ss.school_id
-          JOIN subscription_plans sp ON ss.plan_id = sp.id
+          JOIN subscription_plans sp ON ss.subscription_plan_id = sp.id
           LEFT JOIN platform_usage_logs pul ON s.id = pul.school_id 
             AND pul.logged_at >= CURRENT_DATE - INTERVAL '30 days'
           WHERE s.is_active = true ${schoolFilter.replace('school_id', 's.id')}
@@ -983,8 +983,9 @@ class PlatformAnalyticsController {
             COUNT(mt.*) AS tx_count,
             COUNT(CASE WHEN mt.result_code = '0' THEN 1 END) AS success_count,
             COUNT(CASE WHEN mt.result_code <> '0' OR mt.result_code IS NULL THEN 1 END) AS fail_count,
-            SUM(p.amount) FILTER (WHERE p.channel = 'mpesa') AS mpesa_amount
+            SUM(p.amount) FILTER (WHERE pm.method_type = 'mpesa') AS mpesa_amount
           FROM payments p
+          LEFT JOIN payment_methods pm ON p.payment_method_id = pm.id
           LEFT JOIN mpesa_transactions mt ON mt.payment_id = p.id
           WHERE p.created_at >= CURRENT_DATE - INTERVAL '${dateFilter}'
           GROUP BY p.school_id
@@ -1006,7 +1007,8 @@ class PlatformAnalyticsController {
             t.name as term_name,
             SUM(p.amount) as term_revenue
           FROM schools s
-          JOIN academic_terms t ON t.school_id = s.id
+          JOIN academic_years ay ON ay.school_id = s.id
+          JOIN academic_terms t ON t.academic_year_id = ay.id
           LEFT JOIN payments p ON p.school_id = s.id 
             AND p.created_at BETWEEN t.start_date AND t.end_date
           WHERE s.is_active = true
@@ -1089,7 +1091,8 @@ class PlatformAnalyticsController {
           FROM payments p
           JOIN schools s ON p.school_id = s.id
           LEFT JOIN mpesa_transactions mt ON mt.payment_id = p.id
-          WHERE p.channel = 'mpesa' 
+          JOIN payment_methods pm ON p.payment_method_id = pm.id
+          WHERE pm.method_type = 'mpesa' 
             AND p.created_at >= CURRENT_TIMESTAMP - INTERVAL '${dateFilter}'
           ORDER BY p.created_at DESC
           LIMIT 200
@@ -1100,8 +1103,9 @@ class PlatformAnalyticsController {
             COUNT(CASE WHEN mt.result_code = '0' THEN 1 END) as success,
             COUNT(CASE WHEN mt.result_code <> '0' OR mt.result_code IS NULL THEN 1 END) as failed
           FROM payments p
+          JOIN payment_methods pm ON p.payment_method_id = pm.id
           LEFT JOIN mpesa_transactions mt ON mt.payment_id = p.id
-          WHERE p.channel = 'mpesa'
+          WHERE pm.method_type = 'mpesa'
             AND p.created_at >= CURRENT_TIMESTAMP - INTERVAL '${dateFilter}'
         `),
         query(`
@@ -1116,7 +1120,8 @@ class PlatformAnalyticsController {
             COUNT(*) as count,
             SUM(p.amount) as total
           FROM payments p
-          WHERE p.channel = 'mpesa'
+          JOIN payment_methods pm ON p.payment_method_id = pm.id
+          WHERE pm.method_type = 'mpesa'
             AND p.created_at >= CURRENT_TIMESTAMP - INTERVAL '${dateFilter}'
           GROUP BY bucket
           ORDER BY 
@@ -1133,7 +1138,8 @@ class PlatformAnalyticsController {
             COUNT(*) as tx_count,
             SUM(p.amount) as total_amount
           FROM payments p
-          WHERE p.channel = 'mpesa'
+          JOIN payment_methods pm ON p.payment_method_id = pm.id
+          WHERE pm.method_type = 'mpesa'
             AND p.created_at >= CURRENT_TIMESTAMP - INTERVAL '${dateFilter}'
           GROUP BY EXTRACT(HOUR FROM p.created_at)
           ORDER BY hour
@@ -1163,13 +1169,14 @@ class PlatformAnalyticsController {
           SELECT 
             s.id as school_id,
             s.name as school_name,
-            COUNT(p.*) FILTER (WHERE p.channel = 'mpesa') as mpesa_tx,
+            COUNT(p.*) FILTER (WHERE pm.method_type = 'mpesa') as mpesa_tx,
             COUNT(p.*) as all_tx,
             COUNT(mt.*) FILTER (WHERE mt.result_code = '0') as success_tx,
             COUNT(mt.*) FILTER (WHERE mt.result_code <> '0' OR mt.result_code IS NULL) as failed_tx
           FROM schools s
           LEFT JOIN payments p ON p.school_id = s.id 
             AND p.created_at >= CURRENT_DATE - INTERVAL '90 days'
+          LEFT JOIN payment_methods pm ON p.payment_method_id = pm.id
           LEFT JOIN mpesa_transactions mt ON mt.payment_id = p.id
           GROUP BY s.id, s.name
           ORDER BY mpesa_tx DESC
@@ -1177,7 +1184,7 @@ class PlatformAnalyticsController {
         query(`
           SELECT 
             p.school_id,
-            AVG(CASE WHEN p.channel = 'mpesa' THEN p.amount END) as avg_mpesa_amount
+            AVG(CASE WHEN pm.method_type = 'mpesa' THEN p.amount END) as avg_mpesa_amount
           FROM payments p
           WHERE p.created_at >= CURRENT_DATE - INTERVAL '90 days'
           GROUP BY p.school_id
@@ -1185,11 +1192,12 @@ class PlatformAnalyticsController {
         query(`
           SELECT 
             p.school_id,
-            p.channel,
+            pm.method_type as channel,
             COUNT(*) as count
           FROM payments p
+          JOIN payment_methods pm ON p.payment_method_id = pm.id
           WHERE p.created_at >= CURRENT_DATE - INTERVAL '90 days'
-          GROUP BY p.school_id, p.channel
+          GROUP BY p.school_id, pm.method_type
         `)
       ]);
 
@@ -1235,16 +1243,18 @@ class PlatformAnalyticsController {
             COUNT(*) FILTER (WHERE status = 'reconciled') as reconciled,
             COUNT(*) FILTER (WHERE status = 'pending') as pending,
             COUNT(*) FILTER (WHERE status = 'failed') as failed
-          FROM payments
-          WHERE channel = 'mpesa'
-            AND created_at >= CURRENT_DATE - INTERVAL '30 days'
+          FROM payments p
+          JOIN payment_methods pm ON p.payment_method_id = pm.id
+          WHERE pm.method_type = 'mpesa'
+            AND p.created_at >= CURRENT_DATE - INTERVAL '30 days'
         `),
         query(`
           SELECT 
             p.id, p.school_id, s.name as school_name, p.amount, p.created_at
           FROM payments p
           JOIN schools s ON p.school_id = s.id
-          WHERE p.channel = 'mpesa' AND p.status IN ('pending','failed')
+          JOIN payment_methods pm ON p.payment_method_id = pm.id
+          WHERE pm.method_type = 'mpesa' AND p.status IN ('pending','failed')
           ORDER BY p.created_at DESC
           LIMIT 100
         `),
@@ -1288,13 +1298,13 @@ class PlatformAnalyticsController {
       const [byType, termPatterns, cohorts, mpesaAdoption] = await Promise.all([
         query(`
           SELECT 
-            s.school_type, -- e.g., 'day', 'boarding', 'private', 'public' combined text or enum
+            'All Schools' as school_category,
             COUNT(DISTINCT s.id) as schools,
             SUM(si.total_amount) as total_revenue,
             AVG(si.total_amount) as avg_invoice
           FROM schools s
           JOIN subscription_invoices si ON s.id = si.school_id
-          GROUP BY s.school_type
+          GROUP BY 'All Schools'
         `),
         query(`
           SELECT 
@@ -1303,7 +1313,8 @@ class PlatformAnalyticsController {
             SUM(si.total_amount) as total_revenue,
             SUM(si.amount_paid) as collected_revenue
           FROM academic_terms t
-          JOIN schools s ON t.school_id = s.id
+          JOIN academic_years ay ON t.academic_year_id = ay.id
+          JOIN schools s ON ay.school_id = s.id
           LEFT JOIN subscription_invoices si ON si.school_id = s.id 
             AND si.invoice_date BETWEEN t.start_date AND t.end_date
           GROUP BY t.name, DATE_TRUNC('quarter', si.invoice_date)
@@ -1323,11 +1334,12 @@ class PlatformAnalyticsController {
           SELECT 
             s.id as school_id,
             s.name as school_name,
-            COUNT(p.*) FILTER (WHERE p.channel = 'mpesa') as mpesa_payments,
+            COUNT(p.*) FILTER (WHERE pm.method_type = 'mpesa') as mpesa_payments,
             COUNT(p.*) as total_payments,
-            (COUNT(p.*) FILTER (WHERE p.channel = 'mpesa')::float / NULLIF(COUNT(p.*), 0)) * 100 as mpesa_usage_rate
+            (COUNT(p.*) FILTER (WHERE pm.method_type = 'mpesa')::float / NULLIF(COUNT(p.*), 0)) * 100 as mpesa_usage_rate
           FROM schools s
           LEFT JOIN payments p ON p.school_id = s.id
+          LEFT JOIN payment_methods pm ON p.payment_method_id = pm.id
           GROUP BY s.id, s.name
           ORDER BY mpesa_usage_rate DESC NULLS LAST
         `)

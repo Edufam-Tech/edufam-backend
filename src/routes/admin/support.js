@@ -58,6 +58,38 @@ router.get(
   SupportController.getKnowledgeBase
 );
 
+// Knowledge Base categories
+router.get(
+  '/kb/categories',
+  requireRole(['super_admin', 'support_hr', 'edufam_admin']),
+  SupportController.getKnowledgeBaseCategories
+);
+
+// Knowledge Base CRUD operations
+router.post(
+  '/kb',
+  requireRole(['super_admin', 'support_hr', 'edufam_admin']),
+  SupportController.createKnowledgeBaseArticle
+);
+
+router.get(
+  '/kb/:id',
+  requireRole(['super_admin', 'support_hr', 'edufam_admin']),
+  SupportController.getKnowledgeBaseArticle
+);
+
+router.put(
+  '/kb/:id',
+  requireRole(['super_admin', 'support_hr', 'edufam_admin']),
+  SupportController.updateKnowledgeBaseArticle
+);
+
+router.delete(
+  '/kb/:id',
+  requireRole(['super_admin', 'support_hr', 'edufam_admin']),
+  SupportController.deleteKnowledgeBaseArticle
+);
+
 // Quick actions: create user for a school
 router.post(
   '/schools/:schoolId/quick-actions/create-user',
@@ -91,6 +123,25 @@ router.get(
   '/schools/:schoolId/context',
   requireRole(['super_admin', 'support_hr', 'edufam_admin']),
   SupportController.getSchoolContext
+);
+
+// Training coordination endpoints
+router.get(
+  '/training/history',
+  requireRole(['super_admin', 'support_hr', 'edufam_admin']),
+  SupportController.getTrainingHistory
+);
+
+router.post(
+  '/training',
+  requireRole(['super_admin', 'support_hr', 'edufam_admin']),
+  SupportController.createTrainingSession
+);
+
+router.patch(
+  '/training/:id/status',
+  requireRole(['super_admin', 'support_hr', 'edufam_admin']),
+  SupportController.updateTrainingStatus
 );
 
 // NOTE: Keep endpoints minimal for Support HR scope.

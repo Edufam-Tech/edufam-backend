@@ -407,6 +407,192 @@ class SupportController {
       next(error);
     }
   }
+
+  // Knowledge Base Categories
+  static async getKnowledgeBaseCategories(req, res, next) {
+    try {
+      const result = await query(`
+        SELECT id, name, school_type, created_at
+        FROM knowledge_base_categories
+        ORDER BY name ASC
+      `);
+      res.json({ success: true, data: result.rows });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // Knowledge Base CRUD Operations
+  static async createKnowledgeBaseArticle(req, res, next) {
+    try {
+      const { title, content, category_id, school_type, issue_tags, mpesa_related, video_urls, screenshots } = req.body;
+      
+      if (!title || !content) {
+        throw new ValidationError('Title and content are required');
+      }
+
+      const result = await query(`
+        INSERT INTO knowledge_base_articles (
+          category_id, title, content, school_type, issue_tags, 
+          mpesa_related, video_urls, screenshots, created_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+        RETURNING id, title, content, school_type, issue_tags, mpesa_related, video_urls, screenshots, created_at
+      `, [category_id || null, title, content, school_type || null, issue_tags || [], mpesa_related || false, video_urls || [], screenshots || null]);
+
+      res.status(201).json({ success: true, data: result.rows[0] });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async getKnowledgeBaseArticle(req, res, next) {
+    try {
+      const { id } = req.params;
+      const result = await query(`
+        SELECT id, title, content, school_type, issue_tags, mpesa_related, video_urls, screenshots, created_at, updated_at
+        FROM knowledge_base_articles
+        WHERE id = $1
+      `, [id]);
+
+      if (result.rows.length === 0) {
+        throw new NotFoundError('Article not found');
+      }
+
+      res.json({ success: true, data: result.rows[0] });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async updateKnowledgeBaseArticle(req, res, next) {
+    try {
+      const { id } = req.params;
+      const { title, content, category_id, school_type, issue_tags, mpesa_related, video_urls, screenshots } = req.body;
+      
+      if (!title || !content) {
+        throw new ValidationError('Title and content are required');
+      }
+
+      const result = await query(`
+        UPDATE knowledge_base_articles SET
+          title = $1, content = $2, category_id = $3, school_type = $4, 
+          issue_tags = $5, mpesa_related = $6, video_urls = $7, 
+          screenshots = $8, updated_at = NOW()
+        WHERE id = $9
+        RETURNING id, title, content, school_type, issue_tags, mpesa_related, video_urls, screenshots, created_at, updated_at
+      `, [title, content, category_id || null, school_type || null, issue_tags || [], mpesa_related || false, video_urls || [], screenshots || null, id]);
+
+      if (result.rows.length === 0) {
+        throw new NotFoundError('Article not found');
+      }
+
+      res.json({ success: true, data: result.rows[0] });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async deleteKnowledgeBaseArticle(req, res, next) {
+    try {
+      const { id } = req.params;
+      const result = await query(`
+        DELETE FROM knowledge_base_articles
+        WHERE id = $1
+        RETURNING id, title
+      `, [id]);
+
+      if (result.rows.length === 0) {
+        throw new NotFoundError('Article not found');
+      }
+
+      res.json({ success: true, message: 'Article deleted successfully', data: result.rows[0] });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // Training Coordination
+  static async getTrainingHistory(req, res, next) {
+    try {
+      const { limit = 100, offset = 0, schoolId, status } = req.query;
+      
+      let whereClause = '';
+      const params = [];
+      
+      if (schoolId) {
+        params.push(schoolId);
+        whereClause += `WHERE school_id = $${params.length}`;
+      }
+      
+      if (status) {
+        params.push(status);
+        whereClause += whereClause ? ` AND status = $${params.length}` : `WHERE status = $${params.length}`;
+      }
+      
+      const result = await query(`
+        SELECT 
+          ts.id, ts.school_id, ts.topic, ts.scheduled_at, ts.status, 
+          ts.trainer, ts.participants_count, ts.duration_minutes, ts.notes, ts.created_at,
+          s.name as school_name, s.region_name
+        FROM training_sessions ts
+        LEFT JOIN schools s ON ts.school_id = s.id
+        ${whereClause}
+        ORDER BY ts.scheduled_at DESC
+        LIMIT $${params.length + 1} OFFSET $${params.length + 2}
+      `, [...params, parseInt(limit), parseInt(offset)]);
+      
+      res.json({ success: true, data: result.rows });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async createTrainingSession(req, res, next) {
+    try {
+      const { schoolId, topic, scheduledAt, duration, trainer, notes } = req.body;
+      
+      if (!schoolId || !topic || !scheduledAt) {
+        throw new ValidationError('School ID, topic, and scheduled date are required');
+      }
+      
+      const result = await query(`
+        INSERT INTO training_sessions (
+          school_id, topic, scheduled_at, duration_minutes, trainer, notes, status, created_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, 'scheduled', NOW())
+        RETURNING id, school_id, topic, scheduled_at, duration_minutes, trainer, notes, status, created_at
+      `, [schoolId, topic, scheduledAt, duration || 60, trainer || null, notes || null]);
+      
+      res.status(201).json({ success: true, data: result.rows[0] });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async updateTrainingStatus(req, res, next) {
+    try {
+      const { id } = req.params;
+      const { status, notes } = req.body;
+      
+      if (!status) {
+        throw new ValidationError('Status is required');
+      }
+      
+      const result = await query(`
+        UPDATE training_sessions SET
+          status = $1, notes = COALESCE($2, notes), updated_at = NOW()
+        WHERE id = $3
+        RETURNING id, status, notes, updated_at
+      `, [status, notes, id]);
+      
+      if (result.rows.length === 0) {
+        throw new NotFoundError('Training session not found');
+      }
+      
+      res.json({ success: true, data: result.rows[0] });
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 module.exports = SupportController;

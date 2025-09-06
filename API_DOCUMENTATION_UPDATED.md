@@ -146,8 +146,17 @@ PUT    /api/admin/support/tickets/:id/status      # Update status { status }
 PUT    /api/admin/support/tickets/:id/assign      # Assign ticket { adminId }
 POST   /api/admin/support/tickets/:id/messages    # Add message { body, channel?, direction?, attachments? }
 GET    /api/admin/support/kb                      # Search knowledge base (q, schoolType, mpesaRelated)
+GET    /api/admin/support/kb/categories           # Get knowledge base categories
+POST   /api/admin/support/kb                      # Create knowledge base article
+GET    /api/admin/support/kb/:id                  # Get knowledge base article
+PUT    /api/admin/support/kb/:id                  # Update knowledge base article
+DELETE /api/admin/support/kb/:id                  # Delete knowledge base article
 GET    /api/admin/support/analytics               # Support analytics summary
+GET    /api/admin/support/analytics/timeseries    # Support analytics timeseries
 GET    /api/admin/support/schools/:schoolId/context # School context panel data
+GET    /api/admin/support/training/history        # Get training history
+POST   /api/admin/support/training                # Create training session
+PATCH  /api/admin/support/training/:id/status    # Update training status
 ```
 
 **The following comprehensive implementation details all the newly added methods across all controllers:**

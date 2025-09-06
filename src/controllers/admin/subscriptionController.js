@@ -85,7 +85,7 @@ class SubscriptionController {
           COUNT(ss.id) as active_subscriptions,
           SUM(CASE WHEN ss.subscription_status = 'active' THEN ss.monthly_cost ELSE 0 END) as monthly_revenue
         FROM subscription_plans sp
-        LEFT JOIN school_subscriptions ss ON sp.id = ss.plan_id AND ss.subscription_status = 'active'
+        LEFT JOIN school_subscriptions ss ON sp.id = ss.subscription_plan_id AND ss.subscription_status = 'active'
         ${whereClause}
         GROUP BY sp.id
         ORDER BY sp.plan_type, sp.base_price
@@ -157,6 +157,318 @@ class SubscriptionController {
         success: true,
         message: 'Subscription plan updated successfully',
         data: result.rows[0]
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // =============================================================================
+  // SUBSCRIPTION INVOICING
+  // =============================================================================
+
+  // Generate subscription invoice
+  static async generateSubscriptionInvoice(req, res, next) {
+    try {
+      const { subscriptionId } = req.params;
+      const { billingPeriodStart, billingPeriodEnd, forceRegenerate = false } = req.body;
+
+      // Get subscription details
+      const subscriptionResult = await query(`
+        SELECT 
+          ss.*,
+          s.name as school_name,
+          s.email as school_email,
+          sp.plan_name
+        FROM school_subscriptions ss
+        JOIN schools s ON ss.school_id = s.id
+        JOIN subscription_plans sp ON ss.plan_id = sp.id
+        WHERE ss.id = $1
+      `, [subscriptionId]);
+
+      if (subscriptionResult.rows.length === 0) {
+        throw new NotFoundError('Subscription not found');
+      }
+
+      const subscription = subscriptionResult.rows[0];
+
+      // Check if invoice already exists for this period
+      if (!forceRegenerate) {
+        const existingInvoice = await query(`
+          SELECT id FROM subscription_invoices 
+          WHERE subscription_id = $1 
+            AND billing_period_start = $2 
+            AND billing_period_end = $3
+        `, [subscriptionId, billingPeriodStart, billingPeriodEnd]);
+
+        if (existingInvoice.rows.length > 0) {
+          throw new ConflictError('Invoice already exists for this billing period');
+        }
+      }
+
+      // Generate invoice number
+      const invoiceCount = await query(`
+        SELECT COUNT(*) as count FROM subscription_invoices 
+        WHERE EXTRACT(YEAR FROM created_at) = EXTRACT(YEAR FROM CURRENT_DATE)
+      `);
+      
+      const currentYear = new Date().getFullYear();
+      const sequence = parseInt(invoiceCount.rows[0].count) + 1;
+      const invoiceNumber = `SUB-${currentYear}-${sequence.toString().padStart(6, '0')}`;
+
+      // Calculate invoice amounts
+      const baseAmount = subscription.monthly_cost || 0;
+      const studentCharges = subscription.current_students * (subscription.price_per_student || 0);
+      const subtotal = baseAmount + studentCharges;
+      const taxAmount = subtotal * (subscription.tax_rate || 0);
+      const totalAmount = subtotal + taxAmount;
+
+      // Create invoice
+      const result = await query(`
+        INSERT INTO subscription_invoices (
+          school_id, subscription_id, invoice_number, invoice_date, due_date,
+          billing_period_start, billing_period_end, student_count, staff_count,
+          base_amount, student_charges, tax_amount, total_amount, balance_due
+        ) VALUES ($1, $2, $3, CURRENT_DATE, CURRENT_DATE + INTERVAL '30 days', $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        RETURNING *
+      `, [
+        subscription.school_id, subscriptionId, invoiceNumber, billingPeriodStart,
+        billingPeriodEnd, subscription.current_students, subscription.current_staff,
+        baseAmount, studentCharges, taxAmount, totalAmount, totalAmount
+      ]);
+
+      // Update subscription's last billing date
+      await query(`
+        UPDATE school_subscriptions 
+        SET last_billing_date = CURRENT_DATE,
+            next_billing_date = CURRENT_DATE + INTERVAL '1 month'
+        WHERE id = $1
+      `, [subscriptionId]);
+
+      res.status(201).json({
+        success: true,
+        message: 'Subscription invoice generated successfully',
+        data: result.rows[0]
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // Get subscription invoices
+  static async getSubscriptionInvoices(req, res, next) {
+    try {
+      const { 
+        schoolId, 
+        subscriptionId, 
+        status, 
+        startDate, 
+        endDate,
+        overdue,
+        limit = 20, 
+        offset = 0 
+      } = req.query;
+
+      let whereClause = 'WHERE 1=1';
+      const params = [];
+
+      if (schoolId) {
+        whereClause += ` AND si.school_id = $${params.length + 1}`;
+        params.push(schoolId);
+      }
+
+      if (subscriptionId) {
+        whereClause += ` AND si.subscription_id = $${params.length + 1}`;
+        params.push(subscriptionId);
+      }
+
+      if (status) {
+        whereClause += ` AND si.status = $${params.length + 1}`;
+        params.push(status);
+      }
+
+      if (startDate) {
+        whereClause += ` AND si.invoice_date >= $${params.length + 1}`;
+        params.push(startDate);
+      }
+
+      if (endDate) {
+        whereClause += ` AND si.invoice_date <= $${params.length + 1}`;
+        params.push(endDate);
+      }
+
+      if (overdue === 'true') {
+        whereClause += ` AND si.due_date < CURRENT_DATE AND si.status != 'paid'`;
+      }
+
+      const result = await query(`
+        SELECT 
+          si.*,
+          s.name as school_name,
+          sp.plan_name,
+          CASE 
+            WHEN si.due_date < CURRENT_DATE AND si.status != 'paid' THEN 'overdue'
+            ELSE si.status
+          END as computed_status
+        FROM subscription_invoices si
+        JOIN schools s ON si.school_id = s.id
+        JOIN school_subscriptions ss ON si.subscription_id = ss.id
+        JOIN subscription_plans sp ON ss.subscription_plan_id = sp.id
+        ${whereClause}
+        ORDER BY si.invoice_date DESC
+        LIMIT $${params.length + 1} OFFSET $${params.length + 2}
+      `, [...params, limit, offset]);
+
+      res.json({
+        success: true,
+        data: result.rows,
+        pagination: {
+          limit: parseInt(limit),
+          offset: parseInt(offset),
+          total: result.rows.length
+        }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // Mark invoice as paid
+  static async markInvoiceAsPaid(req, res, next) {
+    try {
+      const { id } = req.params;
+      const { paymentAmount, paymentMethod, transactionId, paymentDate } = req.body;
+
+      if (!paymentAmount) {
+        throw new ValidationError('Payment amount is required');
+      }
+
+      const result = await query(`
+        UPDATE subscription_invoices 
+        SET status = 'paid',
+            amount_paid = $1,
+            balance_due = total_amount - $1,
+            paid_at = $2,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = $3
+        RETURNING *
+      `, [paymentAmount, paymentDate || new Date(), id]);
+
+      if (result.rows.length === 0) {
+        throw new NotFoundError('Invoice not found');
+      }
+
+      res.json({
+        success: true,
+        message: 'Invoice marked as paid successfully',
+        data: result.rows[0]
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // =============================================================================
+  // SUBSCRIPTION ANALYTICS
+  // =============================================================================
+
+  // Get subscription analytics
+  static async getSubscriptionAnalytics(req, res, next) {
+    try {
+      const { startDate, endDate, planType, billingCycle } = req.query;
+
+      let dateFilter = '';
+      let planFilter = '';
+      let billingFilter = '';
+      const params = [];
+
+      if (startDate && endDate) {
+        dateFilter = ` AND ss.created_at BETWEEN $${params.length + 1} AND $${params.length + 2}`;
+        params.push(startDate, endDate);
+      }
+
+      if (planType) {
+        planFilter = ` AND sp.plan_type = $${params.length + 1}`;
+        params.push(planType);
+      }
+
+      if (billingCycle) {
+        billingFilter = ` AND ss.billing_cycle = $${params.length + 1}`;
+        params.push(billingCycle);
+      }
+
+      const result = await query(`
+        SELECT 
+          sp.plan_type,
+          COUNT(ss.id) as total_subscriptions,
+          COUNT(CASE WHEN ss.subscription_status = 'active' THEN 1 END) as active_subscriptions,
+          COUNT(CASE WHEN ss.subscription_status = 'trial' THEN 1 END) as trial_subscriptions,
+          COUNT(CASE WHEN ss.subscription_status = 'suspended' THEN 1 END) as suspended_subscriptions,
+          COUNT(CASE WHEN ss.subscription_status = 'cancelled' THEN 1 END) as cancelled_subscriptions,
+          AVG(ss.monthly_cost) as avg_monthly_cost,
+          SUM(ss.monthly_cost) as total_mrr
+        FROM subscription_plans sp
+        LEFT JOIN school_subscriptions ss ON sp.id = ss.subscription_plan_id
+        WHERE sp.is_active = true ${dateFilter} ${planFilter} ${billingFilter}
+        GROUP BY sp.plan_type
+        ORDER BY total_subscriptions DESC
+      `, params);
+
+      res.json({
+        success: true,
+        data: result.rows
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // Get invoice analytics
+  static async getInvoiceAnalytics(req, res, next) {
+    try {
+      const { startDate, endDate, status, planType } = req.query;
+
+      let dateFilter = '';
+      let statusFilter = '';
+      let planFilter = '';
+      const params = [];
+
+      if (startDate && endDate) {
+        dateFilter = ` AND si.invoice_date BETWEEN $${params.length + 1} AND $${params.length + 2}`;
+        params.push(startDate, endDate);
+      }
+
+      if (status) {
+        statusFilter = ` AND si.status = $${params.length + 1}`;
+        params.push(status);
+      }
+
+      if (planType) {
+        planFilter = ` AND sp.plan_type = $${params.length + 1}`;
+        params.push(planType);
+      }
+
+      const result = await query(`
+        SELECT 
+          si.status,
+          COUNT(*) as invoice_count,
+          SUM(si.total_amount) as total_amount,
+          SUM(si.amount_paid) as amount_paid,
+          SUM(si.balance_due) as balance_due,
+          AVG(si.total_amount) as avg_invoice_amount,
+          COUNT(CASE WHEN si.due_date < CURRENT_DATE AND si.status != 'paid' THEN 1 END) as overdue_count,
+          SUM(CASE WHEN si.due_date < CURRENT_DATE AND si.status != 'paid' THEN si.balance_due ELSE 0 END) as overdue_amount
+        FROM subscription_invoices si
+        JOIN school_subscriptions ss ON si.subscription_id = ss.id
+        JOIN subscription_plans sp ON ss.subscription_plan_id = sp.id
+        WHERE 1=1 ${dateFilter} ${statusFilter} ${planFilter}
+        GROUP BY si.status
+        ORDER BY total_amount DESC
+      `, params);
+
+      res.json({
+        success: true,
+        data: result.rows
       });
     } catch (error) {
       next(error);
@@ -320,7 +632,7 @@ class SubscriptionController {
           END as computed_status
         FROM school_subscriptions ss
         JOIN schools s ON ss.school_id = s.id
-        JOIN subscription_plans sp ON ss.plan_id = sp.id
+        JOIN subscription_plans sp ON ss.subscription_plan_id = sp.id
         ${whereClause}
         ORDER BY ss.created_at DESC
         LIMIT $${params.length + 1} OFFSET $${params.length + 2}
@@ -548,7 +860,7 @@ class SubscriptionController {
         FROM subscription_invoices si
         JOIN schools s ON si.school_id = s.id
         JOIN school_subscriptions ss ON si.subscription_id = ss.id
-        JOIN subscription_plans sp ON ss.plan_id = sp.id
+        JOIN subscription_plans sp ON ss.subscription_plan_id = sp.id
         ${whereClause}
         ORDER BY si.invoice_date DESC
         LIMIT $${params.length + 1} OFFSET $${params.length + 2}
@@ -632,74 +944,78 @@ class SubscriptionController {
         params.push(billingCycle);
       }
 
-      const [overviewResult, revenueResult, churnResult, planDistributionResult] = await Promise.all([
-        // Overview metrics
-        query(`
-          SELECT 
-            COUNT(*) as total_subscriptions,
-            COUNT(CASE WHEN ss.subscription_status = 'active' THEN 1 END) as active_subscriptions,
-            COUNT(CASE WHEN ss.subscription_status = 'trial' THEN 1 END) as trial_subscriptions,
-            COUNT(CASE WHEN ss.subscription_status = 'cancelled' THEN 1 END) as cancelled_subscriptions,
-            AVG(ss.monthly_cost) as avg_monthly_cost,
-            SUM(CASE WHEN ss.subscription_status = 'active' THEN ss.monthly_cost ELSE 0 END) as monthly_recurring_revenue
-          FROM school_subscriptions ss
-          JOIN subscription_plans sp ON ss.plan_id = sp.id
-          WHERE 1=1 ${dateFilter} ${planFilter} ${billingFilter}
-        `, params),
-
-        // Revenue trends
-        query(`
-          SELECT 
-            DATE_TRUNC('month', si.invoice_date) as month,
-            SUM(si.total_amount) as revenue,
-            COUNT(si.id) as invoices_count,
-            SUM(si.amount_paid) as collected_revenue
-          FROM subscription_invoices si
-          JOIN school_subscriptions ss ON si.subscription_id = ss.id
-          JOIN subscription_plans sp ON ss.plan_id = sp.id
-          WHERE si.invoice_date >= CURRENT_DATE - INTERVAL '12 months'
-            ${planFilter} ${billingFilter}
-          GROUP BY DATE_TRUNC('month', si.invoice_date)
-          ORDER BY month DESC
-        `, planType || billingCycle ? [planType, billingCycle].filter(Boolean) : []),
-
-        // Churn analysis
-        query(`
-          SELECT 
-            DATE_TRUNC('month', ss.cancelled_at) as month,
-            COUNT(*) as churned_subscriptions,
-            AVG(ss.monthly_cost) as avg_churned_value
-          FROM school_subscriptions ss
-          WHERE ss.cancelled_at IS NOT NULL
-            AND ss.cancelled_at >= CURRENT_DATE - INTERVAL '12 months'
-          GROUP BY DATE_TRUNC('month', ss.cancelled_at)
-          ORDER BY month DESC
-        `),
-
-        // Plan distribution
-        query(`
-          SELECT 
-            sp.plan_name,
-            sp.plan_type,
-            COUNT(ss.id) as subscription_count,
-            SUM(CASE WHEN ss.subscription_status = 'active' THEN ss.monthly_cost ELSE 0 END) as total_revenue
-          FROM subscription_plans sp
-          LEFT JOIN school_subscriptions ss ON sp.id = ss.plan_id
-          GROUP BY sp.id, sp.plan_name, sp.plan_type
-          ORDER BY subscription_count DESC
-        `)
-      ]);
-
-      const analytics = {
-        overview: overviewResult.rows[0],
-        revenuetrends: revenueResult.rows,
-        churnAnalysis: churnResult.rows,
-        planDistribution: planDistributionResult.rows
-      };
+      const result = await query(`
+        SELECT 
+          sp.plan_type,
+          COUNT(ss.id) as total_subscriptions,
+          COUNT(CASE WHEN ss.subscription_status = 'active' THEN 1 END) as active_subscriptions,
+          COUNT(CASE WHEN ss.subscription_status = 'trial' THEN 1 END) as trial_subscriptions,
+          COUNT(CASE WHEN ss.subscription_status = 'suspended' THEN 1 END) as suspended_subscriptions,
+          COUNT(CASE WHEN ss.subscription_status = 'cancelled' THEN 1 END) as cancelled_subscriptions,
+          AVG(ss.monthly_cost) as avg_monthly_cost,
+          SUM(ss.monthly_cost) as total_mrr
+        FROM subscription_plans sp
+        LEFT JOIN school_subscriptions ss ON sp.id = ss.subscription_plan_id
+        WHERE sp.is_active = true ${dateFilter} ${planFilter} ${billingFilter}
+        GROUP BY sp.plan_type
+        ORDER BY total_subscriptions DESC
+      `, params);
 
       res.json({
         success: true,
-        data: analytics
+        data: result.rows
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // Get invoice analytics
+  static async getInvoiceAnalytics(req, res, next) {
+    try {
+      const { startDate, endDate, status, planType } = req.query;
+
+      let dateFilter = '';
+      let statusFilter = '';
+      let planFilter = '';
+      const params = [];
+
+      if (startDate && endDate) {
+        dateFilter = ` AND si.invoice_date BETWEEN $${params.length + 1} AND $${params.length + 2}`;
+        params.push(startDate, endDate);
+      }
+
+      if (status) {
+        statusFilter = ` AND si.status = $${params.length + 1}`;
+        params.push(status);
+      }
+
+      if (planType) {
+        planFilter = ` AND sp.plan_type = $${params.length + 1}`;
+        params.push(planType);
+      }
+
+      const result = await query(`
+        SELECT 
+          si.status,
+          COUNT(*) as invoice_count,
+          SUM(si.total_amount) as total_amount,
+          SUM(si.amount_paid) as amount_paid,
+          SUM(si.balance_due) as balance_due,
+          AVG(si.total_amount) as avg_invoice_amount,
+          COUNT(CASE WHEN si.due_date < CURRENT_DATE AND si.status != 'paid' THEN 1 END) as overdue_count,
+          SUM(CASE WHEN si.due_date < CURRENT_DATE AND si.status != 'paid' THEN si.balance_due ELSE 0 END) as overdue_amount
+        FROM subscription_invoices si
+        JOIN school_subscriptions ss ON si.subscription_id = ss.id
+        JOIN subscription_plans sp ON ss.subscription_plan_id = sp.id
+        WHERE 1=1 ${dateFilter} ${statusFilter} ${planFilter}
+        GROUP BY si.status
+        ORDER BY total_amount DESC
+      `, params);
+
+      res.json({
+        success: true,
+        data: result.rows
       });
     } catch (error) {
       next(error);
@@ -871,7 +1187,7 @@ class SubscriptionController {
           END as computed_status
         FROM school_subscriptions ss
         JOIN schools s ON ss.school_id = s.id
-        JOIN subscription_plans sp ON ss.plan_id = sp.id
+        JOIN subscription_plans sp ON ss.subscription_plan_id = sp.id
         WHERE ss.id = $1
       `, [id]);
 
