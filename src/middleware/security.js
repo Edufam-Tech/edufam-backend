@@ -127,10 +127,10 @@ const rateLimits = {
     'Too many API requests'
   ),
   
-  // Authentication endpoints (stricter)
+  // Authentication endpoints (more reasonable for development)
   auth: createRateLimit(
     15 * 60 * 1000, // 15 minutes
-    10, // 10 attempts per window
+    50, // 50 attempts per window (increased for development)
     'Too many authentication attempts',
     false // Don't skip successful requests
   ),
