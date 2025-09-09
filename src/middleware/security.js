@@ -60,12 +60,15 @@ const corsOptions = {
       'http://127.0.0.1:3001',
       'https://school.edufam.com',
       'https://admin.edufam.com',
+      'https://www.edufam.org',
+      'https://admin.edufam.org',
       ...envOrigins,
     ];
 
     const allowedPatterns = [
       /^http:\/\/localhost:\d+$/, // any localhost port
       /^http:\/\/127\.0\.0\.1:\d+$/, // any 127.0.0.1 port
+      /^https:\/\/.*\.edufam\.org$/, // any edufam.org subdomain
     ];
 
     // Allow requests with no origin (mobile apps, Postman, etc.)
