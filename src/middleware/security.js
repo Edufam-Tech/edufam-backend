@@ -52,16 +52,32 @@ const corsOptions = {
       .filter(Boolean);
 
     const allowedOrigins = [
+      // Production domains
+      'https://edufam.org',
+      'https://backend.edufam.org',
+      'https://admin.edufam.org',
+      'https://school.edufam.org',
+      
+      // Environment-specific URLs
       process.env.SCHOOL_APP_URL || 'http://localhost:5173',
       process.env.ADMIN_APP_URL || 'http://localhost:3001',
+      process.env.BACKEND_URL || 'http://localhost:5000',
+      
+      // Local development
       'http://localhost:3000',
+      'http://localhost:5173',
+      'http://localhost:3001',
       'http://127.0.0.1:5173',
       'http://127.0.0.1:3000',
       'http://127.0.0.1:3001',
+      'http://127.0.0.1:5000',
+      
+      // Legacy domains (if any)
       'https://school.edufam.com',
       'https://admin.edufam.com',
       'https://www.edufam.org',
-      'https://admin.edufam.org',
+      
+      // Additional origins from environment
       ...envOrigins,
     ];
 

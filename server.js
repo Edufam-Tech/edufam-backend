@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const compression = require('compression');
+const session = require('express-session');
 const { createServer } = require('http');
 const { testConnection } = require('./src/config/database');
 const tokenCleanup = require('./src/utils/tokenCleanup');
@@ -26,6 +27,9 @@ require('dotenv').config();
 const app = express();
 const PORT = Number(process.env.PORT) || 5000;
 
+// Trust proxy for Railway deployment (behind reverse proxy)
+app.set('trust proxy', 1);
+
 // WebSocket manager (initialized per server instance)
 const websocketManager = require('./src/services/websocketManager');
 
@@ -34,6 +38,22 @@ app.use(securityHeaders); // Security headers first
 
 // Centralized CORS configuration - Apply BEFORE other middleware
 app.use(cors(corsOptions));
+
+// Session configuration for production deployment
+app.use(session({
+  secret: process.env.SESSION_SECRET || process.env.JWT_SECRET || 'fallback-secret-change-in-production',
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    secure: process.env.NODE_ENV === 'production', // Use secure cookies in production
+    httpOnly: true, // Prevent XSS attacks
+    maxAge: 24 * 60 * 60 * 1000, // 1 day in milliseconds
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax' // Required for cross-origin requests in production
+  },
+  name: 'edufam.sid', // Custom session name
+  rolling: true, // Reset expiration on activity
+  proxy: true // Trust proxy for secure cookies
+}));
 
 app.use(compression()); // Response compression
 app.use(requestLogger); // Request logging
@@ -321,4 +341,4 @@ const startServer = async () => {
 
 startServer();
 
-module.exports = app; 
+module.exports = app;
