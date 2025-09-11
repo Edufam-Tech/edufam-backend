@@ -7,11 +7,10 @@ const {
   optionalAuthenticate
 } = require('../middleware/auth');
 
-// Import all route modules
+// Import core route modules
 const authRoutes = require('./auth');
 const userRoutes = require('./users');
 const uploadRoutes = require('./upload');
-const schoolRoutesOld = require('./schoolRoutes');
 const schoolRoutes = require('./school');
 const studentRoutes = require('./studentRoutes');
 const staffRoutes = require('./staffRoutes');
@@ -23,51 +22,6 @@ const reportsRoutes = require('./reports');
 const communicationRoutes = require('./communication');
 const hrRoutes = require('./hr');
 const timetableRoutes = require('./timetable');
-const certificateRoutes = require('./certificates');
-const invoiceRoutes = require('./invoices');
-const appraisalRoutes = require('./appraisals');
-const tripsRoutes = require('./trips');
-const realtimeRoutes = require('./realtime');
-const curriculumRoutes = require('./curriculum');
-const securityRoutes = require('./security');
-const complianceRoutes = require('./compliance');
-const calendarRoutes = require('./calendar');
-const trainingRoutes = require('./training');
-const marketplaceRoutes = require('./marketplace');
-const analyticsRoutes = require('./analytics');
-const mobileRoutes = require('./mobile');
-const i18nRoutes = require('./i18n');
-const cloudRoutes = require('./cloud');
-const examinationRoutes = require('./examinations');
-const expenseRoutes = require('./expenses');
-const payrollRoutes = require('./payroll');
-const performanceRoutes = require('./performance');
-const inventoryRoutes = require('./inventory');
-const aiTimetableRoutes = require('./ai-timetable');
-// Web dashboard routes
-const directorWebRoutes = require('./web/directorRoutes');
-const principalWebRoutes = require('./web/principalRoutes');
-const teacherWebRoutes = require('./web/teacherRoutes');
-const hrWebRoutes = require('./web/hrRoutes');
-const financeWebRoutes = require('./web/financeRoutes');
-const parentWebRoutes = require('./web/parentRoutes');
-
-// Admin routes
-const multiSchoolRoutes = require('./admin/multiSchool');
-const subscriptionRoutes = require('./admin/subscriptions');
-const platformAnalyticsRoutes = require('./admin/platformAnalytics');
-const adminHrRoutes = require('./admin/hr');
-const adminTripRoutes = require('./admin/trips');
-const adminUserRoutes = require('./admin/adminUsers');
-const adminCrmRoutes = require('./admin/crm');
-const systemConfigRoutes = require('./admin/systemConfig');
-const regionalRoutes = require('./admin/regional');
-const monitoringRoutes = require('./admin/monitoring');
-const dataMigrationRoutes = require('./admin/dataMigration');
-const integrationRoutes = require('./admin/integrations');
-const adminComplianceRoutes = require('./admin/compliance');
-const adminCommunicationRoutes = require('./admin/communication');
-const adminSupportRoutes = require('./admin/support');
 
 
 
@@ -85,7 +39,7 @@ router.get('/', (req, res) => {
       authentication: '/api/auth',
       users: '/api/users',
       upload: '/api/upload',
-      schools: '/api/schools',
+      school: '/api/school',
       students: '/api/students',
       staff: '/api/staff',
       departments: '/api/departments',
@@ -96,25 +50,7 @@ router.get('/', (req, res) => {
       communication: '/api/communication',
       hr: '/api/hr',
       timetable: '/api/timetable',
-      certificates: '/api/certificates',
-      invoices: '/api/invoices',
-      appraisals: '/api/appraisals',
-      trips: '/api/trips',
-      health: '/health',
-      // Admin endpoints
-      adminMultiSchool: '/api/admin/multi-school',
-      adminSubscriptions: '/api/admin/subscriptions',
-      adminAnalytics: '/api/admin/analytics',
-      adminUsers: '/api/admin/users',
-      adminConfig: '/api/admin/config',
-      adminRegional: '/api/admin/regional',
-      adminMonitoring: '/api/admin/monitoring',
-      adminCommunication: '/api/admin/communication',
-      adminMigration: '/api/admin/migration',
-      adminIntegrations: '/api/admin/integrations',
-      adminCompliance: '/api/admin/compliance',
-      // Mobile endpoints
-      mobile: '/api/mobile'
+      health: '/health'
     },
     modules: {
       academic: {
@@ -319,7 +255,6 @@ router.get('/health', (req, res) => {
 // Enforce maintenance mode for school app APIs only
 router.use('/users', checkMaintenanceMode, schoolAuth, userRoutes);
 router.use('/upload', checkMaintenanceMode, schoolAuth, uploadRoutes);
-router.use('/schools', checkMaintenanceMode, schoolAuth, schoolRoutesOld);
 router.use('/school', checkMaintenanceMode, schoolAuth, schoolRoutes);
 router.use('/students', checkMaintenanceMode, schoolAuth, studentRoutes);
 router.use('/staff', checkMaintenanceMode, schoolAuth, staffRoutes);
@@ -327,94 +262,19 @@ router.use('/departments', checkMaintenanceMode, schoolAuth, departmentRoutes);
 
 // Academic management routes
 router.use('/academic', checkMaintenanceMode, schoolAuth, academicRoutes);
-router.use('/examinations', checkMaintenanceMode, schoolAuth, examinationRoutes);
-router.use('/curriculum', checkMaintenanceMode, schoolAuth, curriculumRoutes);
 router.use('/timetable', checkMaintenanceMode, schoolAuth, timetableRoutes);
-router.use('/ai-timetable', checkMaintenanceMode, schoolAuth, aiTimetableRoutes);
 
 // Financial management routes
 router.use('/financial', checkMaintenanceMode, schoolAuth, financialRoutes);
-router.use('/expenses', checkMaintenanceMode, schoolAuth, expenseRoutes);
-router.use('/payroll', checkMaintenanceMode, schoolAuth, payrollRoutes);
 
 // Operations management routes
 router.use('/transport', checkMaintenanceMode, schoolAuth, transportRoutes);
 router.use('/hr', checkMaintenanceMode, schoolAuth, hrRoutes);
-router.use('/performance', checkMaintenanceMode, schoolAuth, performanceRoutes);
-router.use('/inventory', checkMaintenanceMode, schoolAuth, inventoryRoutes);
 
 // Communication and reporting routes
 router.use('/communication', checkMaintenanceMode, schoolAuth, communicationRoutes);
 router.use('/reports', checkMaintenanceMode, schoolAuth, reportsRoutes);
-router.use('/certificates', checkMaintenanceMode, schoolAuth, certificateRoutes);
-router.use('/invoices', checkMaintenanceMode, schoolAuth, invoiceRoutes);
-router.use('/appraisals', checkMaintenanceMode, schoolAuth, appraisalRoutes);
-router.use('/calendar', checkMaintenanceMode, schoolAuth, calendarRoutes);
 
-// Trip and training management
-router.use('/trips', checkMaintenanceMode, schoolAuth, tripsRoutes);
-router.use('/training', checkMaintenanceMode, schoolAuth, trainingRoutes);
-
-// Real-time and marketplace
-router.use('/realtime', checkMaintenanceMode, schoolAuth, realtimeRoutes);
-router.use('/marketplace', checkMaintenanceMode, schoolAuth, marketplaceRoutes);
-
-// Analytics and business intelligence
-router.use('/analytics', checkMaintenanceMode, schoolAuth, analyticsRoutes);
-
-// Security and compliance
-router.use('/security', checkMaintenanceMode, schoolAuth, securityRoutes);
-router.use('/compliance', checkMaintenanceMode, schoolAuth, complianceRoutes);
-
-// Internationalization and cloud features
-router.use('/i18n', checkMaintenanceMode, schoolAuth, i18nRoutes);
-router.use('/cloud', checkMaintenanceMode, schoolAuth, cloudRoutes);
-
-// Mobile application routes (only for dashboard users)
-// Allow parent users access to mobile routes alongside school users
-const { authenticate } = require('../middleware/auth');
-router.use('/mobile', checkMaintenanceMode, authenticate, mobileRoutes);
-
-// Web dashboard routes (role-guarded inside the router)
-router.use('/web/director', checkMaintenanceMode, directorWebRoutes);
-router.use('/web/principal', checkMaintenanceMode, principalWebRoutes);
-router.use('/web/teacher', checkMaintenanceMode, teacherWebRoutes);
-router.use('/web/hr', checkMaintenanceMode, hrWebRoutes);
-router.use('/web/finance', checkMaintenanceMode, financeWebRoutes);
-router.use('/web/parent', checkMaintenanceMode, parentWebRoutes);
-
-/**
- * ===========================
- * ADMIN APPLICATION ROUTES
- * All routes use adminAuth which:
- * 1. Authenticates users
- * 2. Only allows admin dashboard users (super_admin, engineer, admin_finance, support_hr, sales_marketing)
- * ===========================
- */
-
-// Import bypass maintenance middleware
-const { bypassMaintenance } = require('../middleware/auth');
-
-// Admin platform management
-router.use('/admin/multi-school', adminAuth, bypassMaintenance, multiSchoolRoutes);
-router.use('/admin/subscriptions', adminAuth, bypassMaintenance, subscriptionRoutes);
-router.use('/admin/analytics', adminAuth, bypassMaintenance, platformAnalyticsRoutes);
-router.use('/admin/hr', adminAuth, bypassMaintenance, adminHrRoutes);
-router.use('/admin/trips', adminAuth, bypassMaintenance, adminTripRoutes);
-router.use('/admin/crm', adminAuth, bypassMaintenance, adminCrmRoutes);
-router.use('/admin/users', adminAuth, bypassMaintenance, adminUserRoutes);
-router.use('/admin/config', adminAuth, bypassMaintenance, systemConfigRoutes);
-router.use('/admin/regional', adminAuth, bypassMaintenance, regionalRoutes);
-router.use('/admin/monitoring', adminAuth, bypassMaintenance, monitoringRoutes);
-router.use('/admin/migration', adminAuth, bypassMaintenance, dataMigrationRoutes);
-router.use('/admin/integrations', adminAuth, bypassMaintenance, integrationRoutes);
-router.use('/admin/compliance', adminAuth, bypassMaintenance, adminComplianceRoutes);
-router.use('/admin/support', adminAuth, bypassMaintenance, adminSupportRoutes);
-router.use('/admin/communication', adminAuth, bypassMaintenance, adminCommunicationRoutes);
-// Expose marketplace to admin app as well
-router.use('/admin/marketplace', adminAuth, bypassMaintenance, marketplaceRoutes);
-// Allow admin app to use upload endpoints too
-router.use('/admin/upload', adminAuth, bypassMaintenance, uploadRoutes);
 
 /**
  * ===========================
