@@ -1,6 +1,5 @@
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
-const { body, validationResult } = require('express-validator');
 
 // Security headers middleware
 // In development, relax CSP and disable HSTS to avoid local HTTP/port issues (e.g., net::ERR_FAILED)
@@ -106,7 +105,8 @@ const corsOptions = {
       callback(new Error(`Origin ${origin} not allowed by CORS policy`));
     }
   },
-  credentials: true,
+  // Only require credentials if using cookie-based sessions
+  credentials: process.env.USE_COOKIE_SESSIONS === 'true',
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: [
     'Origin',
@@ -157,6 +157,22 @@ const rateLimits = {
     15 * 60 * 1000, // 15 minutes
     50, // 50 attempts per window (increased for development)
     'Too many authentication attempts',
+    false // Don't skip successful requests
+  ),
+
+  // Login endpoint (stricter for brute force protection)
+  login: createRateLimit(
+    15 * 60 * 1000, // 15 minutes
+    10, // 10 login attempts per window
+    'Too many login attempts. Please try again later.',
+    false // Don't skip successful requests
+  ),
+
+  // Refresh token endpoint (moderate)
+  refresh: createRateLimit(
+    15 * 60 * 1000, // 15 minutes
+    20, // 20 refresh attempts per window
+    'Too many token refresh attempts',
     false // Don't skip successful requests
   ),
   

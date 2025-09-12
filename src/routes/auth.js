@@ -6,12 +6,17 @@ const {
   requireSupportHR,
   hasAnyRole
 } = require('../middleware/auth');
+const { 
+  authenticateJWT,
+  requireRole,
+  requireUserType
+} = require('../middleware/jwtAuth');
 const { validationChains } = require('../middleware/validation');
 const { rateLimits } = require('../middleware/security');
 
 const router = express.Router();
 
-// Apply authentication rate limiting to all auth routes
+// Apply general authentication rate limiting to all auth routes
 router.use(rateLimits.auth);
 
 // Handle OPTIONS requests for CORS preflight
@@ -21,11 +26,13 @@ router.options('/login', (req, res) => {
 
 // Public authentication routes (no authentication required)
 router.post('/login', 
+  rateLimits.login, // Specific rate limiting for login
   validationChains.login,
   authController.login
 );
 
 router.post('/refresh-token',
+  rateLimits.refresh, // Specific rate limiting for refresh
   [
     require('express-validator').body('refreshToken')
       .notEmpty()
@@ -109,25 +116,25 @@ router.post('/logout-all',
 );
 
 router.get('/me',
-  authenticate,
+  authenticateJWT,
   authController.me
 );
 
 router.post('/validate-session',
-  authenticate,
+  authenticateJWT,
   authController.validateSession
 );
 
 router.delete('/sessions/:sessionId',
-  authenticate,
+  authenticateJWT,
   validationChains.uuidParam('sessionId'),
   authController.terminateSession
 );
 
 // Admin only routes - only super_admin and support_hr can access auth stats
 router.get('/stats',
-  authenticate,
-  hasAnyRole(['super_admin', 'support_hr']),
+  authenticateJWT,
+  requireRole(['super_admin', 'support_hr']),
   authController.getAuthStats
 );
 

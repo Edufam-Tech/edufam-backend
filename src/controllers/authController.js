@@ -76,7 +76,7 @@ class AuthController {
 
     // RLS context already set earlier in the flow
 
-    // Store refresh token in database
+    // Store refresh token in database (hashed for security)
     const deviceInfo = {
       ip: ipAddress,
       userAgent: userAgent,

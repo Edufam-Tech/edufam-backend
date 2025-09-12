@@ -122,19 +122,22 @@ class AuthService {
     }
   }
 
-  // Store refresh token in database
+  // Store refresh token in database (hashed for security)
   async storeRefreshToken(userId, refreshToken, deviceInfo = {}) {
     try {
       const expiresAt = new Date();
       expiresAt.setDate(expiresAt.getDate() + 7); // 7 days from now
 
+      // Hash the refresh token for security
+      const tokenHash = await bcrypt.hash(refreshToken, 12);
+
       const result = await query(`
-        INSERT INTO user_sessions (user_id, refresh_token, ip_address, user_agent, device_info, expires_at)
+        INSERT INTO refresh_tokens (user_id, token_hash, ip_address, user_agent, device_info, expires_at)
         VALUES ($1, $2, $3, $4, $5, $6)
         RETURNING id
       `, [
         userId,
-        refreshToken,
+        tokenHash,
         deviceInfo.ip || null,
         deviceInfo.userAgent || null,
         JSON.stringify(deviceInfo),
@@ -150,21 +153,25 @@ class AuthService {
   // Validate refresh token from database
   async validateRefreshToken(refreshToken) {
     try {
+      // Get all active refresh tokens for comparison
       const result = await query(`
-        SELECT us.*, u.id as user_id, u.email, u.role, u.user_type, u.school_id, 
+        SELECT rt.*, u.id as user_id, u.email, u.role, u.user_type, u.school_id, 
                u.is_active, u.activation_status
-        FROM user_sessions us
-        JOIN users u ON us.user_id = u.id
-        WHERE us.refresh_token = $1 
-          AND us.is_active = true 
-          AND us.expires_at > NOW()
-      `, [refreshToken]);
+        FROM refresh_tokens rt
+        JOIN users u ON rt.user_id = u.id
+        WHERE rt.revoked = false 
+          AND rt.expires_at > NOW()
+      `);
 
-      if (result.rows.length === 0) {
-        throw new AuthenticationError('Invalid or expired refresh token');
+      // Check if any of the tokens match (bcrypt comparison)
+      for (const row of result.rows) {
+        const isValid = await bcrypt.compare(refreshToken, row.token_hash);
+        if (isValid) {
+          return row;
+        }
       }
 
-      return result.rows[0];
+      throw new AuthenticationError('Invalid or expired refresh token');
     } catch (error) {
       if (error instanceof AuthenticationError) {
         throw error;
@@ -176,12 +183,32 @@ class AuthService {
   // Revoke refresh token
   async revokeRefreshToken(refreshToken) {
     try {
-      await query(`
-        UPDATE user_sessions 
-        SET is_active = false 
-        WHERE refresh_token = $1
-      `, [refreshToken]);
+      // Hash the token to find it in the database
+      const result = await query(`
+        SELECT token_hash FROM refresh_tokens 
+        WHERE revoked = false AND expires_at > NOW()
+      `);
+
+      // Find the matching token hash
+      for (const row of result.rows) {
+        const isValid = await bcrypt.compare(refreshToken, row.token_hash);
+        if (isValid) {
+          // Revoke this specific token
+          await query(`
+            UPDATE refresh_tokens 
+            SET revoked = true, revoked_at = NOW()
+            WHERE token_hash = $1
+          `, [row.token_hash]);
+          return;
+        }
+      }
+
+      // If no matching token found, it's already invalid
+      throw new AuthenticationError('Invalid refresh token');
     } catch (error) {
+      if (error instanceof AuthenticationError) {
+        throw error;
+      }
       throw new DatabaseError('Failed to revoke refresh token');
     }
   }
@@ -190,9 +217,9 @@ class AuthService {
   async revokeAllUserSessions(userId) {
     try {
       await query(`
-        UPDATE user_sessions 
-        SET is_active = false 
-        WHERE user_id = $1
+        UPDATE refresh_tokens 
+        SET revoked = true, revoked_at = NOW()
+        WHERE user_id = $1 AND revoked = false
       `, [userId]);
     } catch (error) {
       throw new DatabaseError('Failed to revoke user sessions');
@@ -203,11 +230,11 @@ class AuthService {
   async cleanupExpiredTokens() {
     try {
       const result = await query(`
-        DELETE FROM user_sessions 
-        WHERE expires_at < NOW() OR is_active = false
+        DELETE FROM refresh_tokens 
+        WHERE expires_at < NOW() OR revoked = true
       `);
       
-      console.log(`🧹 Cleaned up ${result.rowCount} expired/inactive sessions`);
+      console.log(`🧹 Cleaned up ${result.rowCount} expired/revoked refresh tokens`);
       return result.rowCount;
     } catch (error) {
       console.error('Failed to cleanup expired tokens:', error);
@@ -220,8 +247,8 @@ class AuthService {
     try {
       const result = await query(`
         SELECT id, ip_address, user_agent, device_info, created_at, expires_at
-        FROM user_sessions
-        WHERE user_id = $1 AND is_active = true AND expires_at > NOW()
+        FROM refresh_tokens
+        WHERE user_id = $1 AND revoked = false AND expires_at > NOW()
         ORDER BY created_at DESC
       `, [userId]);
 

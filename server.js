@@ -3,8 +3,8 @@ const cors = require('cors');
 const compression = require('compression');
 const session = require('express-session');
 const { createServer } = require('http');
-const { testConnection } = require('./src/config/database');
-const tokenCleanup = require('./src/utils/tokenCleanup');
+const { testConnection, getPoolStats, closePool } = require('./src/config/database');
+const tokenCleanupService = require('./src/services/tokenCleanupService');
 
 // Import security middleware
 const { 
@@ -42,21 +42,28 @@ app.use(securityHeaders); // Security headers second
 // Centralized CORS configuration - Apply BEFORE other middleware
 app.use(cors(corsOptions));
 
-// Session configuration for production deployment
-app.use(session({
-  secret: process.env.SESSION_SECRET || process.env.JWT_SECRET || 'fallback-secret-change-in-production',
-  resave: false,
-  saveUninitialized: false,
-  cookie: {
-    secure: process.env.NODE_ENV === 'production', // Use secure cookies in production
-    httpOnly: true, // Prevent XSS attacks
-    maxAge: 24 * 60 * 60 * 1000, // 1 day in milliseconds
-    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax' // Required for cross-origin requests in production
-  },
-  name: 'edufam.sid', // Custom session name
-  rolling: true, // Reset expiration on activity
-  proxy: true // Trust proxy for secure cookies
-}));
+// Session configuration - only mount if USE_COOKIE_SESSIONS is true
+const useCookieSessions = process.env.USE_COOKIE_SESSIONS === 'true';
+
+if (useCookieSessions) {
+  console.log('🍪 Cookie-based sessions enabled');
+  app.use(session({
+    secret: process.env.SESSION_SECRET || process.env.JWT_SECRET || 'fallback-secret-change-in-production',
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      secure: process.env.NODE_ENV === 'production', // Use secure cookies in production
+      httpOnly: true, // Prevent XSS attacks
+      maxAge: 24 * 60 * 60 * 1000, // 1 day in milliseconds
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax' // Required for cross-origin requests in production
+    },
+    name: 'edufam.sid', // Custom session name
+    rolling: true, // Reset expiration on activity
+    proxy: true // Trust proxy for secure cookies
+  }));
+} else {
+  console.log('🔑 JWT-based authentication enabled (stateless)');
+}
 
 app.use(compression()); // Response compression
 app.use(requestLogger); // Request logging
@@ -236,6 +243,29 @@ app.get('/api/health/database', async (req, res) => {
   }
 });
 
+// Pool statistics endpoint
+app.get('/api/health/pool-stats', async (req, res) => {
+  try {
+    const { getPoolStats } = require('./src/config/database');
+    const stats = getPoolStats();
+    
+    res.json({
+      status: 'OK',
+      message: 'Pool statistics retrieved successfully',
+      pools: stats,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Pool stats check failed:', error);
+    res.status(500).json({
+      status: 'ERROR',
+      message: 'Failed to retrieve pool statistics',
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
 // Graceful handler for accidental POSTs to root
 // Some clients may inadvertently POST to "/" (e.g., misconfigured forms or proxies)
 // Respond with guidance instead of a 404 to reduce noise during auth flows
@@ -327,9 +357,22 @@ const startServer = async () => {
       console.warn('🔧 Check your DATABASE_URL to connect to Supabase');
     }
 
-    // Start token cleanup service (run once)
+    // Get active database connections for monitoring
+    console.log('📊 Fetching database connection statistics...');
+    const activeConnections = await getActiveConnections();
+    const poolStats = getPoolStats();
+    
+    if (activeConnections) {
+      console.log(`📊 Active DB Connections: ${activeConnections.active_connections}/${activeConnections.total_connections} (${activeConnections.idle_connections} idle)`);
+    }
+    
+    if (poolStats) {
+      console.log(`📊 Pool Stats: Session(${poolStats.sessionPool?.totalCount || 0} total, ${poolStats.sessionPool?.idleCount || 0} idle)${poolStats.transactionPool ? `, Transaction(${poolStats.transactionPool.totalCount || 0} total, ${poolStats.transactionPool.idleCount || 0} idle)` : ''}`);
+    }
+
+    // Start token cleanup service
     console.log('🧹 Starting token cleanup service...');
-    tokenCleanup.start();
+    tokenCleanupService.start();
 
     // Helper to create and start HTTP server with WS, retrying on port conflicts
     const startOnPort = (port, retriesLeft = 5) => {
@@ -357,7 +400,11 @@ const startServer = async () => {
         console.log(`🔗 Health check: http://localhost:${port}/health`);
         console.log(`📡 API info: http://localhost:${port}/api`);
         console.log(`🗄️ Database: ${dbConnected ? '✅ Connected' : '❌ Not Connected'}`);
+        console.log(`🔗 DB URLs loaded: session${process.env.DATABASE_URL_TRANSACTION ? '/transaction' : ''}`);
         console.log(`🔒 Security: ✅ Active (CORS, Rate Limiting, Input Sanitization)`);
+        console.log(`🔑 Auth Mode: ${useCookieSessions ? 'COOKIE' : 'JWT'}`);
+        console.log(`🌐 Allowed Origins: ${process.env.ALLOWED_ORIGINS || 'Not configured'}`);
+        console.log(`📊 Pool Settings: max=${process.env.DB_POOL_MAX || '10'}, min=${process.env.DB_POOL_MIN || '1'}`);
         console.log(`🛡️ Maintenance Mode: ${process.env.MAINTENANCE_MODE === 'true' ? '🟡 Enabled' : '✅ Disabled'}`);
         console.log(`🧹 Token Cleanup: ✅ Active`);
         console.log('');
@@ -386,6 +433,67 @@ const startServer = async () => {
     process.exit(1);
   }
 };
+
+// Enhanced monitoring - get active DB connections
+async function getActiveConnections() {
+  try {
+    const { query } = require('./src/config/database');
+    const result = await query(`
+      SELECT 
+        COUNT(*) as total_connections,
+        COUNT(CASE WHEN state = 'active' THEN 1 END) as active_connections,
+        COUNT(CASE WHEN state = 'idle' THEN 1 END) as idle_connections,
+        COUNT(CASE WHEN state = 'idle in transaction' THEN 1 END) as idle_in_transaction
+      FROM pg_stat_activity 
+      WHERE datname = current_database()
+    `);
+    return result.rows[0];
+  } catch (error) {
+    console.warn('⚠️  Could not fetch active connections:', error.message);
+    return null;
+  }
+}
+
+// Graceful shutdown handler
+async function gracefulShutdown(signal) {
+  console.log(`\n🛑 Received ${signal}. Starting graceful shutdown...`);
+  
+  try {
+    // Stop accepting new connections
+    console.log('📝 Stopping token cleanup service...');
+    tokenCleanupService.stop();
+    
+    // Close database pools
+    console.log('🔌 Closing database connections...');
+    await closePool();
+    
+    // Close WebSocket connections
+    console.log('📡 Closing WebSocket connections...');
+    websocketManager.closeAllConnections();
+    
+    console.log('✅ Graceful shutdown completed');
+    process.exit(0);
+  } catch (error) {
+    console.error('💥 Error during graceful shutdown:', error.message);
+    process.exit(1);
+  }
+}
+
+// Register shutdown handlers
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGUSR2', () => gracefulShutdown('SIGUSR2')); // For nodemon
+
+// Handle uncaught exceptions
+process.on('uncaughtException', (error) => {
+  console.error('💥 Uncaught Exception:', error);
+  gracefulShutdown('UNCAUGHT_EXCEPTION');
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('💥 Unhandled Rejection at:', promise, 'reason:', reason);
+  gracefulShutdown('UNHANDLED_REJECTION');
+});
 
 startServer();
 
