@@ -4,11 +4,12 @@ class HealthCheckService {
   async db() {
     try {
       await connectWithRetry(2);
-      const result = await query('SELECT NOW() as now, ssl_is_used() as ssl_used, version() as pg_version');
+      const result = await query('SELECT NOW() as now, current_setting(\'ssl\') as ssl_setting, version() as pg_version');
       return { 
         healthy: true, 
         now: result.rows[0].now,
-        ssl_used: result.rows[0].ssl_used,
+        ssl_used: result.rows[0].ssl_setting === 'on',
+        ssl_setting: result.rows[0].ssl_setting,
         pg_version: result.rows[0].pg_version.split(' ')[0] + ' ' + result.rows[0].pg_version.split(' ')[1]
       };
     } catch (error) {
@@ -23,10 +24,10 @@ class HealthCheckService {
 
   async ssl() {
     try {
-      const result = await query('SELECT ssl_is_used() as ssl_used, current_setting(\'ssl\') as ssl_setting');
+      const result = await query('SELECT current_setting(\'ssl\') as ssl_setting');
       return { 
         healthy: true, 
-        ssl_used: result.rows[0].ssl_used,
+        ssl_used: result.rows[0].ssl_setting === 'on',
         ssl_setting: result.rows[0].ssl_setting
       };
     } catch (error) {

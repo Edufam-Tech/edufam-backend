@@ -30,8 +30,13 @@ const createPoolConfig = (connectionString, poolType = 'session') => {
     console.log(`🔓 SSL disabled for ${poolType} pool (development mode)`);
   }
 
-  return {
-    connectionString,
+  // Parse connection string to individual components for explicit SSL control
+  const config = {
+    host: url.hostname,
+    port: parseInt(url.port) || 5432,
+    database: url.pathname.slice(1), // Remove leading slash
+    user: url.username,
+    password: url.password,
     ssl: sslConfig,
     // Pool configuration driven by environment variables
     max: parseInt(process.env.DB_POOL_MAX || '10', 10),
@@ -47,6 +52,18 @@ const createPoolConfig = (connectionString, poolType = 'session') => {
     statement_timeout: 30000, // 30s statement timeout
     query_timeout: 30000
   };
+
+  // Log the parsed configuration for debugging
+  console.log(`🔧 ${poolType} pool config:`, {
+    host: config.host,
+    port: config.port,
+    database: config.database,
+    user: config.user,
+    ssl: config.ssl,
+    sslMode: sslMode
+  });
+
+  return config;
 };
 
 // Validate required environment variables
@@ -119,15 +136,23 @@ const testConnection = async () => {
     const { sslMode } = parseConnectionString(process.env.DATABASE_URL_SESSION);
     console.log(`🔒 SSL Mode: ${sslMode || 'not specified'}`);
     console.log(`🔧 SSL Config: ${sessionPool.options.ssl ? JSON.stringify(sessionPool.options.ssl) : 'disabled'}`);
+    console.log(`🔧 Pool Options:`, {
+      host: sessionPool.options.host,
+      port: sessionPool.options.port,
+      database: sessionPool.options.database,
+      user: sessionPool.options.user,
+      ssl: sessionPool.options.ssl
+    });
     
     client = await sessionPool.connect();
     console.log('🔌 Connection established, testing query...');
     
-    const result = await client.query('SELECT NOW() as current_time, version() as pg_version, ssl_is_used() as ssl_used');
+    const result = await client.query('SELECT NOW() as current_time, version() as pg_version, current_setting(\'ssl\') as ssl_setting');
     console.log('✅ Database connected successfully via Session Pooler');
     console.log(`🕐 Current time: ${result.rows[0].current_time}`);
     console.log(`🗄️ PostgreSQL version: ${result.rows[0].pg_version.split(' ')[0]} ${result.rows[0].pg_version.split(' ')[1]}`);
-    console.log(`🔒 SSL Connection: ${result.rows[0].ssl_used ? '✅ YES' : '❌ NO'}`);
+    console.log(`🔒 SSL Setting: ${result.rows[0].ssl_setting}`);
+    console.log(`🔒 SSL Connection: ${result.rows[0].ssl_setting === 'on' ? '✅ YES' : '❌ NO'}`);
     
     return true;
   } catch (error) {
