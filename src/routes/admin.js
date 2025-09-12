@@ -8,6 +8,7 @@ const AdminMonitoringController = require('../controllers/adminMonitoringControl
 const AdminCommunicationController = require('../controllers/adminCommunicationController');
 const AdminAuditController = require('../controllers/adminAuditController');
 const AdminConfigController = require('../controllers/adminConfigController');
+const SupportHRController = require('../controllers/supportHRController');
 
 // Protect all admin routes
 router.use(adminAuth);
@@ -45,6 +46,7 @@ router.post('/users/:userId/reactivate', hasAnyRole(['super_admin','support_hr']
 
 // Multi-school admin endpoints for school users and schools (super admin and support_hr)
 router.get('/multi-school/schools', hasAnyRole(['super_admin','support_hr']), MultiSchoolAdminController.listSchools);
+router.get('/multi-school/schools/:id', hasAnyRole(['super_admin','support_hr']), MultiSchoolAdminController.getSchoolById);
 router.get('/multi-school/users', hasAnyRole(['super_admin','support_hr']), MultiSchoolAdminController.listUsers);
 router.get('/multi-school/schools/:schoolId/users', hasAnyRole(['super_admin','support_hr']), MultiSchoolAdminController.listUsersBySchool);
 router.get('/multi-school/oversight/dashboard', requireSuperAdmin, MultiSchoolAdminController.oversightDashboard);
@@ -71,6 +73,36 @@ router.post('/config/maintenance/disable', requireSuperAdmin, AdminConfigControl
 // Data backups - list and create
 router.get('/migration/backups', requireSuperAdmin, AdminConfigController.listBackups);
 router.post('/migration/backups', requireSuperAdmin, AdminConfigController.createBackup);
+
+// ================= Support HR routes =================
+// Dashboard analytics
+router.get('/support/analytics', hasAnyRole(['super_admin','support_hr']), SupportHRController.analyticsSummary);
+router.get('/support/analytics/timeseries', hasAnyRole(['super_admin','support_hr']), SupportHRController.analyticsTimeseries);
+
+// Tickets
+router.get('/support/tickets', hasAnyRole(['super_admin','support_hr']), SupportHRController.listTickets);
+router.get('/support/tickets/:id', hasAnyRole(['super_admin','support_hr']), SupportHRController.getTicket);
+router.patch('/support/tickets/:id', hasAnyRole(['super_admin','support_hr']), SupportHRController.updateTicket);
+router.post('/support/tickets/:id/status', hasAnyRole(['super_admin','support_hr']), SupportHRController.updateTicketStatus);
+router.post('/support/tickets/:id/messages', hasAnyRole(['super_admin','support_hr']), SupportHRController.addTicketMessage);
+
+// Knowledge Base
+router.get('/support/kb', hasAnyRole(['super_admin','support_hr']), SupportHRController.listKB);
+router.get('/support/kb/categories', hasAnyRole(['super_admin','support_hr']), SupportHRController.listKBCategories);
+router.post('/support/kb', hasAnyRole(['super_admin','support_hr']), SupportHRController.createKBArticle);
+router.put('/support/kb/:id', hasAnyRole(['super_admin','support_hr']), SupportHRController.updateKBArticle);
+router.delete('/support/kb/:id', hasAnyRole(['super_admin','support_hr']), SupportHRController.deleteKBArticle);
+
+// Training
+router.get('/support/training/history', hasAnyRole(['super_admin','support_hr']), SupportHRController.trainingHistory);
+router.post('/support/schools/:schoolId/quick-actions/trigger-training', hasAnyRole(['super_admin','support_hr']), SupportHRController.triggerTraining);
+router.patch('/support/training/:id/status', hasAnyRole(['super_admin','support_hr']), SupportHRController.updateTrainingStatus);
+
+// Onboarding (registration pipeline)
+router.get('/multi-school/onboarding', hasAnyRole(['super_admin','support_hr']), SupportHRController.listOnboarding);
+router.patch('/multi-school/onboarding/:id/status', hasAnyRole(['super_admin','support_hr']), SupportHRController.updateOnboardingStatus);
+router.post('/multi-school/onboarding/:id/notes', hasAnyRole(['super_admin','support_hr']), SupportHRController.addOnboardingNote);
+router.patch('/multi-school/onboarding/bulk-status', hasAnyRole(['super_admin','support_hr']), SupportHRController.bulkUpdateOnboardingStatus);
 
 module.exports = router;
 
