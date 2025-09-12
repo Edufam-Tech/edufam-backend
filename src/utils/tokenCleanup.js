@@ -16,6 +16,8 @@ class TokenCleanup {
 
     this.isRunning = true;
     console.log('🧹 Starting automated token cleanup...');
+    console.log('   📅 Cleanup interval: Every 6 hours');
+    console.log('   🔄 Immediate cleanup: Yes');
 
     // Run cleanup immediately
     this.runCleanup();
@@ -25,18 +27,26 @@ class TokenCleanup {
       this.runCleanup();
     }, 6 * 60 * 60 * 1000); // 6 hours
 
-    console.log('✅ Token cleanup scheduled every 6 hours');
+    console.log('✅ Token cleanup service started successfully');
+    console.log('   🕐 Next cleanup: ' + new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString());
   }
 
   // Stop automated cleanup
   stop() {
+    if (!this.isRunning) {
+      console.log('⚠️  Token cleanup service is not running');
+      return;
+    }
+
     if (this.cleanupInterval) {
       clearInterval(this.cleanupInterval);
       this.cleanupInterval = null;
     }
     
     this.isRunning = false;
-    console.log('🛑 Token cleanup stopped');
+    console.log('🛑 Token cleanup service stopped');
+    console.log('   📅 Cleanup interval: Cleared');
+    console.log('   🔄 Status: Inactive');
   }
 
   // Run cleanup process
@@ -127,6 +137,16 @@ class TokenCleanup {
       console.error('Failed to get cleanup stats:', error);
       return null;
     }
+  }
+
+  // Get service status
+  getStatus() {
+    return {
+      isRunning: this.isRunning,
+      cleanupInterval: this.cleanupInterval ? '6 hours' : 'Not set',
+      nextCleanup: this.cleanupInterval ? 
+        new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString() : null
+    };
   }
 }
 

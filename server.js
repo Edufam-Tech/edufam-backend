@@ -4,7 +4,8 @@ const compression = require('compression');
 const session = require('express-session');
 const { createServer } = require('http');
 const { testConnection, getPoolStats, closePool } = require('./src/config/database');
-const tokenCleanupService = require('./src/services/tokenCleanupService');
+const tokenCleanup = require('./src/utils/tokenCleanup');
+const { checkMaintenanceMode } = require('./src/utils/maintenance');
 
 // Import security middleware
 const { 
@@ -13,7 +14,6 @@ const {
   rateLimits, 
   sanitizeInput, 
   requestLogger, 
-  checkMaintenanceMode, 
   detectSuspiciousActivity 
 } = require('./src/middleware/security');
 
@@ -67,7 +67,6 @@ if (useCookieSessions) {
 
 app.use(compression()); // Response compression
 app.use(requestLogger); // Request logging
-app.use(checkMaintenanceMode); // Maintenance mode check
 app.use(detectSuspiciousActivity); // Security monitoring
 
 // Enhanced debug logging for CORS and request tracking
@@ -117,81 +116,34 @@ app.use(rateLimits.general);
 // Serve static files from uploads directory
 app.use('/uploads', express.static('uploads'));
 
+
 // Enhanced health check route with security status
 app.get('/health', async (req, res) => {
   try {
     const dbConnected = await testConnection();
+    const maintenance = await checkMaintenanceMode();
     
-    // Check for active maintenance mode with strict time logic
-    let maintenanceInfo = null;
-    let isMaintenanceActive = false;
-    
-    try {
-      const { query } = require('./src/config/database');
-      const now = new Date();
-      
-      const maintenanceResult = await query(`
-        SELECT 
-          is_active,
-          message,
-          scheduled_start,
-          scheduled_end
-        FROM maintenance_mode 
-        WHERE is_active = true
-        ORDER BY scheduled_start DESC
-      `);
-      
-      if (maintenanceResult.rows.length > 0) {
-        // Check time validity for each maintenance record
-        for (const record of maintenanceResult.rows) {
-          let shouldBeActive = true;
-          
-          // Check if maintenance should have started
-          if (record.scheduled_start) {
-            const startTime = new Date(record.scheduled_start);
-            if (now < startTime) {
-              shouldBeActive = false;
-            }
-          }
-          
-          // Check if maintenance has expired
-          if (record.scheduled_end) {
-            const endTime = new Date(record.scheduled_end);
-            if (now > endTime) {
-              shouldBeActive = false;
-            }
-          }
-          
-          if (shouldBeActive) {
-            maintenanceInfo = record;
-            isMaintenanceActive = true;
-            break;
-          }
-        }
-      }
-    } catch (error) {
-      console.error('Error checking maintenance mode in health endpoint:', error);
-    }
-    
-    // Always return 200 for health check, but include maintenance status
+    // Always return HTTP 200 with proper structure
     res.json({ 
-      status: isMaintenanceActive ? 'MAINTENANCE' : 'OK', 
-      message: isMaintenanceActive 
-        ? (maintenanceInfo?.message || 'System is currently under maintenance')
+      status: maintenance.active ? 'MAINTENANCE' : 'OK', 
+      message: maintenance.active 
+        ? (maintenance.message || 'System is currently under maintenance')
         : 'Edufam Backend Server is running',
       database: dbConnected ? 'Connected' : 'Disconnected',
+      maintenance: maintenance.active ? {
+        message: maintenance.message || 'System maintenance in progress',
+        scheduled_start: maintenance.scheduled_start || null,
+        scheduled_end: maintenance.scheduled_end || null,
+        source: maintenance.source || 'unknown'
+      } : null,
       security: {
-        maintenance: isMaintenanceActive,
+        maintenance: maintenance.active,
         rateLimit: 'Active',
         cors: 'Configured',
         headers: 'Secured',
-        tokenCleanup: tokenCleanup.isRunning ? 'Active' : 'Inactive'
+        tokenCleanup: tokenCleanup?.isRunning ? 'Active' : 'Inactive'
       },
-      maintenance: isMaintenanceActive ? {
-        message: maintenanceInfo?.message || 'System maintenance in progress',
-        estimated_end_time: maintenanceInfo?.scheduled_end || null,
-        scheduled_start: maintenanceInfo?.scheduled_start || null
-      } : null,
+      tokenCleanup: tokenCleanup?.getStatus ? tokenCleanup.getStatus() : { isRunning: false, error: 'Service not available' },
       timestamp: new Date().toISOString(),
       environment: process.env.NODE_ENV || 'development',
       version: '1.0.0',
@@ -202,10 +154,40 @@ app.get('/health', async (req, res) => {
       }
     });
   } catch (error) {
-    res.status(503).json({
+    // Even if everything fails, return 200 with error status
+    console.error('💥 Health check failed:', error.message);
+    res.json({
       status: 'ERROR',
-      message: 'Server running but database connection failed',
-      database: 'Disconnected',
+      message: 'Server running but health check failed',
+      database: 'Unknown',
+      maintenance: null,
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// Dedicated maintenance mode check endpoint
+app.get('/api/maintenance', async (req, res) => {
+  try {
+    const maintenance = await checkMaintenanceMode();
+    
+    res.json({
+      status: maintenance.active ? 'MAINTENANCE' : 'OK',
+      maintenance: maintenance.active ? {
+        message: maintenance.message || 'System maintenance in progress',
+        scheduled_start: maintenance.scheduled_start || null,
+        scheduled_end: maintenance.scheduled_end || null,
+        source: maintenance.source || 'unknown'
+      } : null,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('💥 Maintenance check failed:', error.message);
+    res.json({
+      status: 'ERROR',
+      message: 'Failed to check maintenance mode',
+      maintenance: null,
       error: error.message,
       timestamp: new Date().toISOString()
     });
@@ -372,7 +354,11 @@ const startServer = async () => {
 
     // Start token cleanup service
     console.log('🧹 Starting token cleanup service...');
-    tokenCleanupService.start();
+    if (tokenCleanup && typeof tokenCleanup.start === 'function') {
+      tokenCleanup.start();
+    } else {
+      console.warn('⚠️  Token cleanup service not available');
+    }
 
     // Helper to create and start HTTP server with WS, retrying on port conflicts
     const startOnPort = (port, retriesLeft = 5) => {
@@ -461,7 +447,11 @@ async function gracefulShutdown(signal) {
   try {
     // Stop accepting new connections
     console.log('📝 Stopping token cleanup service...');
-    tokenCleanupService.stop();
+    if (tokenCleanup && typeof tokenCleanup.stop === 'function') {
+      tokenCleanup.stop();
+    } else {
+      console.warn('⚠️  Token cleanup service not available for stopping');
+    }
     
     // Close database pools
     console.log('🔌 Closing database connections...');
