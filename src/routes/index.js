@@ -19,6 +19,7 @@ const academicRoutes = require('./academic');
 const financialRoutes = require('./financial');
 const transportRoutes = require('./transport');
 const reportsRoutes = require('./reports');
+const adminRoutes = require('./admin');
 const communicationRoutes = require('./communication');
 const hrRoutes = require('./hr');
 const timetableRoutes = require('./timetable');
@@ -37,6 +38,7 @@ router.get('/', (req, res) => {
     documentation: '/api/docs',
     endpoints: {
       authentication: '/api/auth',
+      admin: '/api/admin',
       users: '/api/users',
       upload: '/api/upload',
       school: '/api/school',
@@ -274,6 +276,9 @@ router.use('/hr', checkMaintenanceMode, schoolAuth, hrRoutes);
 // Communication and reporting routes
 router.use('/communication', checkMaintenanceMode, schoolAuth, communicationRoutes);
 router.use('/reports', checkMaintenanceMode, schoolAuth, reportsRoutes);
+
+// Admin application routes (JWT admin users)
+router.use('/admin', adminRoutes);
 
 
 /**
