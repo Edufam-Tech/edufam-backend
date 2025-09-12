@@ -17,6 +17,8 @@ const {
   detectSuspiciousActivity 
 } = require('./src/middleware/security');
 
+const httpsEnforcement = require('./src/middleware/httpsEnforcement');
+
 const { errorHandler, notFoundHandler } = require('./src/middleware/errorHandler');
 
 // Import routes
@@ -34,7 +36,8 @@ app.set('trust proxy', 1);
 const websocketManager = require('./src/services/websocketManager');
 
 // Apply security middleware in order
-app.use(securityHeaders); // Security headers first
+app.use(httpsEnforcement); // HTTPS enforcement first
+app.use(securityHeaders); // Security headers second
 
 // Centralized CORS configuration - Apply BEFORE other middleware
 app.use(cors(corsOptions));
@@ -60,19 +63,28 @@ app.use(requestLogger); // Request logging
 app.use(checkMaintenanceMode); // Maintenance mode check
 app.use(detectSuspiciousActivity); // Security monitoring
 
-// Add debug logging for CORS issues
+// Enhanced debug logging for CORS and request tracking
 app.use((req, res, next) => {
-  console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
-  console.log('Origin:', req.headers.origin);
-  console.log('User-Agent:', req.headers['user-agent']);
+  const timestamp = new Date().toISOString();
+  const origin = req.headers.origin || 'No Origin';
+  const userAgent = req.headers['user-agent'] || 'No User-Agent';
+  const referer = req.headers.referer || 'No Referer';
+  
+  console.log(`\n📥 ${timestamp} - ${req.method} ${req.url}`);
+  console.log(`🌐 Origin: ${origin}`);
+  console.log(`🔗 Referer: ${referer}`);
+  console.log(`🖥️ User-Agent: ${userAgent}`);
+  console.log(`🔑 Auth Header: ${req.headers.authorization ? 'Present' : 'Missing'}`);
+  console.log(`🍪 Cookies: ${req.headers.cookie ? 'Present' : 'Missing'}`);
   
   // Handle OPTIONS requests globally as backup
   if (req.method === 'OPTIONS') {
-    console.log('Handling OPTIONS request for:', req.url);
+    console.log('🔄 Handling OPTIONS preflight request for:', req.url);
     res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
     res.header('Access-Control-Allow-Credentials', 'true');
     res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
     res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, Cache-Control, X-Access-Token');
+    console.log('✅ OPTIONS response sent');
     return res.status(200).end();
   }
   
@@ -175,7 +187,12 @@ app.get('/health', async (req, res) => {
       } : null,
       timestamp: new Date().toISOString(),
       environment: process.env.NODE_ENV || 'development',
-      version: '1.0.0'
+      version: '1.0.0',
+      // Add CORS headers for health check
+      cors: {
+        allowedOrigins: process.env.ALLOWED_ORIGINS?.split(',') || [],
+        currentOrigin: req.headers.origin || 'No Origin'
+      }
     });
   } catch (error) {
     res.status(503).json({
@@ -183,6 +200,37 @@ app.get('/health', async (req, res) => {
       message: 'Server running but database connection failed',
       database: 'Disconnected',
       error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// Additional database connection test endpoint
+app.get('/api/health/database', async (req, res) => {
+  try {
+    const { query } = require('./src/config/database');
+    const result = await query('SELECT NOW() as current_time, version() as pg_version, current_database() as database_name');
+    
+    res.json({
+      status: 'OK',
+      message: 'Database connection successful',
+      database: {
+        connected: true,
+        current_time: result.rows[0].current_time,
+        version: result.rows[0].pg_version,
+        name: result.rows[0].database_name
+      },
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Database health check failed:', error);
+    res.status(503).json({
+      status: 'ERROR',
+      message: 'Database connection failed',
+      database: {
+        connected: false,
+        error: error.message
+      },
       timestamp: new Date().toISOString()
     });
   }

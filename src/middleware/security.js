@@ -54,6 +54,7 @@ const corsOptions = {
     const allowedOrigins = [
       // Production domains
       'https://edufam.org',
+      'https://www.edufam.org',
       'https://backend.edufam.org',
       'https://admin.edufam.org',
       'https://school.edufam.org',
@@ -75,7 +76,6 @@ const corsOptions = {
       // Legacy domains (if any)
       'https://school.edufam.com',
       'https://admin.edufam.com',
-      'https://www.edufam.org',
       
       // Additional origins from environment
       ...envOrigins,
@@ -88,16 +88,22 @@ const corsOptions = {
     ];
 
     // Allow requests with no origin (mobile apps, Postman, etc.)
-    if (!origin) return callback(null, true);
+    if (!origin) {
+      console.log('✅ CORS: Allowing request with no origin (mobile app/Postman)');
+      return callback(null, true);
+    }
 
     const isExplicitlyAllowed = allowedOrigins.includes(origin);
     const matchesPattern = allowedPatterns.some((re) => re.test(origin));
 
     if (isExplicitlyAllowed || matchesPattern) {
+      console.log(`✅ CORS: Allowing origin: ${origin}`);
       callback(null, true);
     } else {
-      console.log('CORS blocked origin:', origin);
-      callback(new Error('Not allowed by CORS policy'));
+      console.log(`❌ CORS: Blocked origin: ${origin}`);
+      console.log('📋 Allowed origins:', allowedOrigins);
+      console.log('🔍 Pattern matches:', allowedPatterns.map(p => p.toString()));
+      callback(new Error(`Origin ${origin} not allowed by CORS policy`));
     }
   },
   credentials: true,
