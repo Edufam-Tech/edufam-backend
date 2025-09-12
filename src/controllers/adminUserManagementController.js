@@ -10,15 +10,16 @@ class AdminUserManagementController {
     try {
       const limit = Math.max(1, Math.min(parseInt(req.query.limit || '50', 10), 1000));
       const offset = Math.max(0, parseInt(req.query.offset || '0', 10));
+      const allowedRoles = ['super_admin','support_hr','sales_marketing','admin_finance','engineer'];
 
       const list = await query(
-        `SELECT id, email, first_name, last_name, phone, role, activation_status as status,
-                two_factor_enabled, last_login as last_login_at, created_at
+        `SELECT id, email, first_name, last_name, phone, role,
+                activation_status as status, last_login as last_login_at, created_at
          FROM users
-         WHERE user_type = 'admin_user'
+         WHERE user_type = 'admin_user' AND role::text = ANY($3::text[])
          ORDER BY created_at DESC
          LIMIT $1 OFFSET $2`,
-        [limit, offset]
+        [limit, offset, allowedRoles]
       );
 
       res.json({ success: true, data: list.rows });
@@ -29,12 +30,13 @@ class AdminUserManagementController {
 
   static async getAdminStatistics(req, res, next) {
     try {
+      const allowedRoles = ['super_admin','support_hr','sales_marketing','admin_finance','engineer'];
       const stats = await query(`
         SELECT 
           COUNT(*)::int AS total_admins,
           COUNT(*) FILTER (WHERE activation_status = 'active')::int AS active_admins
         FROM users
-        WHERE user_type = 'admin_user'`);
+        WHERE user_type = 'admin_user' AND role = ANY($1::text[])`, [allowedRoles]);
 
       res.json({ success: true, data: { securityStats: stats.rows[0] } });
     } catch (error) {
@@ -58,6 +60,11 @@ class AdminUserManagementController {
         temporaryPassword,
         twoFactorEnabled = false,
       } = req.body || {};
+
+      const allowedRoles = ['super_admin','support_hr','sales_marketing','admin_finance','engineer'];
+      if (!allowedRoles.includes(role)) {
+        return res.status(400).json({ success: false, error: { message: 'Invalid admin role' } });
+      }
 
       const password = temporaryPassword || AdminUserManagementController.#generateTempPassword();
 
@@ -131,6 +138,57 @@ class AdminUserManagementController {
       const { userId } = req.params;
       await userService.setUserActivationStatus(userId, 'active', req.user.userId);
       res.json({ success: true, message: 'User reactivated' });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async createSchoolUser(req, res, next) {
+    try {
+      // Allow super admin and support HR to create school users
+      // req.canManageAllUsers is true for super admin; support_hr gets canManageSchoolUsers
+      if (!req.canManageAllUsers && !req.canManageSchoolUsers) {
+        return res.status(403).json({ success: false, error: { message: 'Insufficient permissions to create school users' } });
+      }
+
+      const {
+        email,
+        firstName,
+        lastName,
+        phone,
+        role,
+        schoolId,
+        temporaryPassword,
+        activationStatus = 'active',
+        emailVerified = true,
+        profilePictureUrl = null,
+      } = req.body || {};
+
+      if (!schoolId) {
+        return res.status(400).json({ success: false, error: { message: 'schoolId is required' } });
+      }
+
+      const password = temporaryPassword || AdminUserManagementController.#generateTempPassword();
+
+      const created = await userService.createUser({
+        email,
+        password,
+        firstName,
+        lastName,
+        phone,
+        userType: 'school_user',
+        role,
+        schoolId,
+        activationStatus,
+        emailVerified,
+        profilePictureUrl,
+      }, req.user.userId);
+
+      res.status(201).json({
+        success: true,
+        data: { user: created, temporaryPassword: temporaryPassword ? undefined : password },
+        message: 'School user created successfully'
+      });
     } catch (error) {
       next(error);
     }

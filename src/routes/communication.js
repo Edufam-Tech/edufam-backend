@@ -90,7 +90,35 @@ router.get('/announcements/recent',
     try {
       const days = parseInt(req.query.days || '7', 10);
       const adminOnly = req.query.admin_only === 'true';
-      
+
+      // Role-based audience filtering
+      const userRole = req.user.role;
+      const audienceClauses = [
+        `a.target_audience = 'all'`,
+        `a.target_audience = 'school_users'`
+      ];
+
+      if (userRole !== 'parent') {
+        audienceClauses.push(`a.target_audience = 'staff'`);
+        audienceClauses.push(`a.target_audience = 'administrative_staff'`);
+        audienceClauses.push(`a.target_audience = 'teaching_staff'`);
+        audienceClauses.push(`a.target_audience = 'management'`);
+      } else {
+        audienceClauses.push(`a.target_audience = 'parents'`);
+      }
+
+      const roleMap = {
+        school_director: ["school_director", "school_directors", "management", "staff"],
+        principal: ["principal", "principals", "teaching_staff", "administrative_staff", "management", "staff"],
+        teacher: ["teacher", "teachers", "teaching_staff", "staff"],
+        hr: ["hr", "hr_staff", "administrative_staff", "staff"],
+        finance: ["finance", "finance_staff", "administrative_staff", "staff"],
+        parent: ["parent", "parents", "school_users"],
+      };
+      for (const a of (roleMap[userRole] || [userRole])) {
+        audienceClauses.push(`a.target_audience = '${a}'`);
+      }
+
       let sql = `
         SELECT 
           a.id,
@@ -106,16 +134,17 @@ router.get('/announcements/recent',
         JOIN users u ON a.created_by = u.id
         WHERE a.school_id = $1
           AND a.created_at >= CURRENT_DATE - INTERVAL '${days} days'
+          AND (${audienceClauses.join(' OR ')})
       `;
-      
+
       const params = [req.user.schoolId];
-      
+
       if (adminOnly) {
         sql += ` AND u.role = 'super_admin'`;
       }
-      
+
       sql += ` ORDER BY a.is_urgent DESC, a.created_at DESC LIMIT 20`;
-      
+
       const result = await query(sql, params);
       res.json({ success: true, data: result.rows });
     } catch (error) { next(error); }

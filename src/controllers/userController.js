@@ -339,6 +339,10 @@ class UserController {
 
     // Update role if provided and user has permission
     if (role) {
+      // School HR cannot change roles; only super admin/support_hr can
+      if (!req.canManageAllUsers && !req.canManageSchoolUsers) {
+        throw new AuthorizationError('Insufficient permissions to change role');
+      }
       await query(`
         UPDATE users 
         SET role = $1, updated_at = NOW()
@@ -348,6 +352,10 @@ class UserController {
 
     // Update activation status if provided
     if (activationStatus) {
+      // Only company roles can change activation status
+      if (!req.canManageAllUsers && !req.canManageSchoolUsers) {
+        throw new AuthorizationError('Only company admins can change activation status');
+      }
       await userService.setUserActivationStatus(userId, activationStatus, req.user.userId);
     }
 

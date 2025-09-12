@@ -437,6 +437,12 @@ const requireUserManagement = (req, res, next) => {
     req.canManageOwnSchoolUsers = true;
     return next();
   }
+
+  // School HR can create/manage users in their school only (limited operations)
+  if (role === 'hr' && userType === 'school_user') {
+    req.canManageOwnSchoolUsers = true;
+    return next();
+  }
   
   return res.status(403).json({
     success: false,

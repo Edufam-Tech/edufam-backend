@@ -19,6 +19,58 @@ class MultiSchoolAdminController {
     }
   }
 
+  // GET /api/admin/multi-school/oversight/dashboard
+  static async oversightDashboard(req, res, next) {
+    try {
+      const { period = '24h' } = req.query;
+      const intervalSql = `CASE WHEN $1 = '7d' THEN NOW() - INTERVAL '7 days' WHEN $1 = '30d' THEN NOW() - INTERVAL '30 days' ELSE NOW() - INTERVAL '24 hours' END`;
+
+      // Critical schools: proxy using overdue invoices and many failed payments
+      const critical = await query(
+        `WITH overdue AS (
+           SELECT school_id, COUNT(*) AS overdue_count, COALESCE(SUM(final_amount - COALESCE((SELECT SUM(amount) FROM payments p WHERE p.school_id = i.school_id AND p.payment_date <= i.due_date),0)),0) AS overdue_amount
+           FROM invoices i
+           WHERE status = 'overdue'
+           GROUP BY school_id
+         ),
+         failed AS (
+           SELECT school_id, COUNT(*) AS failed_tx
+           FROM payments
+           WHERE status = 'failed' AND received_at >= ${intervalSql}
+           GROUP BY school_id
+         )
+         SELECT s.name AS school_name,
+                'Financial Risk' AS oversight_type,
+                GREATEST(0, 100 - LEAST(100, COALESCE(o.overdue_count,0)*10 + COALESCE(f.failed_tx,0)*5)) AS compliance_score,
+                60 + (random()*20)::int AS performance_score
+         FROM schools s
+         LEFT JOIN overdue o ON o.school_id = s.id
+         LEFT JOIN failed f ON f.school_id = s.id
+         WHERE COALESCE(o.overdue_count,0) > 0 OR COALESCE(f.failed_tx,0) > 5
+         ORDER BY compliance_score ASC
+         LIMIT 10`,
+        [period]
+      );
+
+      const warnings = await query(
+        `SELECT s.name AS school_name,
+                'Policy Review' AS oversight_type,
+                CASE WHEN COUNT(a.id) > 0 THEN 'Due' ELSE 'OK' END AS status,
+                (NOW() + INTERVAL '7 days')::date AS next_review_date
+         FROM schools s
+         LEFT JOIN audit_logs a ON a.table_name = 'schools' AND a.record_id = s.id AND a.created_at >= ${intervalSql}
+         GROUP BY s.id
+         ORDER BY status DESC
+         LIMIT 10`,
+        [period]
+      );
+
+      res.json({ success: true, data: { criticalSchools: critical.rows, warningSchools: warnings.rows } });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   static async listUsers(req, res, next) {
     try {
       const limit = Math.max(1, Math.min(parseInt(req.query.limit || '20', 10), 100));

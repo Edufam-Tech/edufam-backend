@@ -115,6 +115,8 @@ app.use(rateLimits.general);
 
 // Serve static files from uploads directory
 app.use('/uploads', express.static('uploads'));
+// Serve generated backups (read-only)
+app.use('/backups', express.static('backups'));
 
 
 // Enhanced health check route with security status

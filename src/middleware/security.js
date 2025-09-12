@@ -271,6 +271,10 @@ const checkMaintenanceMode = async (req, res, next) => {
       return next();
     }
     
+    // Determine client type for selective blocking: 'web' (default) or 'mobile'
+    const clientHeader = (req.get('X-Edufam-Client') || '').toLowerCase();
+    const clientType = clientHeader === 'mobile' ? 'mobile' : 'web';
+
     // Check DB maintenance table with strict time logic
     let maintenanceMode = false;
     let maintenanceInfo = null;
@@ -332,8 +336,45 @@ const checkMaintenanceMode = async (req, res, next) => {
         
         // If we found a valid maintenance record
         if (maintenanceMode && maintenanceInfo) {
+          // Read affected clients from system settings
+          let affectedClients = ['web'];
+          try {
+            const settings = await query(`
+              SELECT setting_value FROM system_settings WHERE setting_key = $1
+            `, ['maintenance_affected_clients']);
+            if (settings.rows.length > 0) {
+              const raw = settings.rows[0].setting_value;
+              const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+              if (Array.isArray(parsed) && parsed.length > 0) {
+                affectedClients = parsed.map(s => String(s).toLowerCase());
+              }
+            }
+          } catch (e) {
+            // ignore and use default
+          }
+
+          // Skip blocking if current client type is not affected
+          if (!affectedClients.includes(clientType)) {
+            return next();
+          }
+
           // Check for allowed IPs
-          const allowedIps = Array.isArray(maintenanceInfo.allowed_ips) ? maintenanceInfo.allowed_ips : [];
+          // Allowed IPs are stored in system_settings key
+          let allowedIps = [];
+          try {
+            const ipSettings = await query(`
+              SELECT setting_value FROM system_settings WHERE setting_key = $1
+            `, ['maintenance_allowed_ips']);
+            if (ipSettings.rows.length > 0) {
+              const raw = ipSettings.rows[0].setting_value;
+              const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+              if (Array.isArray(parsed)) {
+                allowedIps = parsed;
+              }
+            }
+          } catch (e) {
+            // ignore
+          }
           const ip = req.ip || req.connection?.remoteAddress || '';
           if (allowedIps.includes(ip)) {
             return next();
