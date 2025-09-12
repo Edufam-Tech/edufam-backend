@@ -1,11 +1,38 @@
 const { Pool } = require('pg');
 require('dotenv').config();
 
+// Parse connection string to extract SSL mode
+const parseConnectionString = (connectionString) => {
+  const url = new URL(connectionString);
+  const sslMode = url.searchParams.get('sslmode');
+  return { sslMode, url };
+};
+
 // Database configuration with dual connection pools
 const createPoolConfig = (connectionString, poolType = 'session') => {
+  const { sslMode, url } = parseConnectionString(connectionString);
+  
+  // Determine SSL configuration based on connection string and environment
+  let sslConfig;
+  if (sslMode === 'require' || sslMode === 'prefer') {
+    // Supabase requires SSL with rejectUnauthorized: false for self-signed certificates
+    sslConfig = { rejectUnauthorized: false };
+    console.log(`🔒 SSL enabled for ${poolType} pool (sslmode=${sslMode})`);
+  } else if (process.env.SSL_REJECT_UNAUTHORIZED === 'false') {
+    sslConfig = { rejectUnauthorized: false };
+    console.log(`🔒 SSL enabled for ${poolType} pool (env override)`);
+  } else if (process.env.NODE_ENV === 'production') {
+    // Force SSL in production
+    sslConfig = { rejectUnauthorized: false };
+    console.log(`🔒 SSL enabled for ${poolType} pool (production mode)`);
+  } else {
+    sslConfig = false;
+    console.log(`🔓 SSL disabled for ${poolType} pool (development mode)`);
+  }
+
   return {
     connectionString,
-    ssl: process.env.SSL_REJECT_UNAUTHORIZED === 'false' ? false : { rejectUnauthorized: false },
+    ssl: sslConfig,
     // Pool configuration driven by environment variables
     max: parseInt(process.env.DB_POOL_MAX || '10', 10),
     min: parseInt(process.env.DB_POOL_MIN || '1', 10),
@@ -32,10 +59,30 @@ const validateDatabaseConfig = () => {
   
   console.log('✅ DATABASE_URL_SESSION is configured');
   
+  // Check SSL configuration in connection strings
+  const sessionSslMode = parseConnectionString(process.env.DATABASE_URL_SESSION).sslMode;
+  if (sessionSslMode) {
+    console.log(`🔒 DATABASE_URL_SESSION SSL mode: ${sessionSslMode}`);
+  } else {
+    console.log('⚠️  DATABASE_URL_SESSION has no SSL mode specified - will use environment defaults');
+  }
+  
   if (process.env.DATABASE_URL_TRANSACTION) {
     console.log('✅ DATABASE_URL_TRANSACTION is configured (transaction pooler)');
+    const transactionSslMode = parseConnectionString(process.env.DATABASE_URL_TRANSACTION).sslMode;
+    if (transactionSslMode) {
+      console.log(`🔒 DATABASE_URL_TRANSACTION SSL mode: ${transactionSslMode}`);
+    } else {
+      console.log('⚠️  DATABASE_URL_TRANSACTION has no SSL mode specified - will use environment defaults');
+    }
   } else {
     console.log('ℹ️  DATABASE_URL_TRANSACTION not set, using session pooler for all queries');
+  }
+  
+  // Provide SSL guidance for Supabase
+  if (process.env.DATABASE_URL_SESSION?.includes('supabase')) {
+    console.log('🔧 Supabase detected - ensure your DATABASE_URL includes ?sslmode=require');
+    console.log('🔧 Example: postgresql://user:pass@host:port/db?sslmode=require');
   }
 };
 
@@ -61,28 +108,38 @@ try {
   throw error;
 }
 
-// Enhanced connection test with better error handling
+// Enhanced connection test with better error handling and SSL status
 const testConnection = async () => {
   let client;
   try {
     console.log('🔄 Testing database connection via session pooler...');
     console.log(`🔗 Using: ${process.env.DATABASE_URL_SESSION ? 'DATABASE_URL_SESSION is set' : 'DATABASE_URL_SESSION is missing'}`);
     
+    // Check SSL configuration
+    const { sslMode } = parseConnectionString(process.env.DATABASE_URL_SESSION);
+    console.log(`🔒 SSL Mode: ${sslMode || 'not specified'}`);
+    console.log(`🔧 SSL Config: ${sessionPool.options.ssl ? JSON.stringify(sessionPool.options.ssl) : 'disabled'}`);
+    
     client = await sessionPool.connect();
     console.log('🔌 Connection established, testing query...');
     
-    const result = await client.query('SELECT NOW() as current_time, version() as pg_version');
+    const result = await client.query('SELECT NOW() as current_time, version() as pg_version, ssl_is_used() as ssl_used');
     console.log('✅ Database connected successfully via Session Pooler');
     console.log(`🕐 Current time: ${result.rows[0].current_time}`);
     console.log(`🗄️ PostgreSQL version: ${result.rows[0].pg_version.split(' ')[0]} ${result.rows[0].pg_version.split(' ')[1]}`);
+    console.log(`🔒 SSL Connection: ${result.rows[0].ssl_used ? '✅ YES' : '❌ NO'}`);
     
     return true;
   } catch (error) {
     console.error('❌ Database connection failed:', error.message);
     console.error('🔧 Error details:', error.code || 'No error code');
     
-    // Specific error handling
-    if (error.message.includes('timeout')) {
+    // Specific error handling for SSL issues
+    if (error.code === 'SELF_SIGNED_CERT_IN_CHAIN') {
+      console.error('🔒 SSL Certificate Error: Self-signed certificate in certificate chain');
+      console.error('🔧 This is common with Supabase - ensure sslmode=require is in your DATABASE_URL');
+      console.error('🔧 And that ssl: { rejectUnauthorized: false } is configured');
+    } else if (error.message.includes('timeout')) {
       console.error('⏰ Connection timeout - this could be:');
       console.error('   1. Network/firewall blocking connection');
       console.error('   2. Supabase project paused/inactive');
@@ -92,6 +149,9 @@ const testConnection = async () => {
       console.error('🌐 DNS resolution failed - check your internet connection');
     } else if (error.message.includes('authentication failed')) {
       console.error('🔐 Authentication failed - check your password');
+    } else if (error.message.includes('SSL')) {
+      console.error('🔒 SSL Error - check your SSL configuration');
+      console.error('🔧 For Supabase, ensure your DATABASE_URL includes ?sslmode=require');
     }
     
     return false;
