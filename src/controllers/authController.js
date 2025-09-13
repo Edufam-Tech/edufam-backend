@@ -66,9 +66,18 @@ class AuthController {
     await authService.resetFailedLoginAttempts(user.id);
 
     // Allow admin users (admin application) and school users (school application + mobile)
-    // Mobile app supports all school roles: school_director, principal, teacher, hr, finance, parent
     if (!['school_user', 'admin_user'].includes(user.user_type)) {
       throw new AuthenticationError('Account type not allowed');
+    }
+
+    // Enforce stricter role restriction for mobile client
+    // Only allow: school_director, principal, teacher, parent
+    const clientHeader = (req.get('X-Edufam-Client') || '').toLowerCase();
+    if (clientHeader === 'mobile') {
+      const allowedMobileRoles = new Set(['school_director', 'principal', 'teacher', 'parent']);
+      if (!allowedMobileRoles.has(user.role)) {
+        throw new AuthenticationError('Only directors, principals, teachers, and parents can log in on mobile');
+      }
     }
 
     // Generate JWT tokens
