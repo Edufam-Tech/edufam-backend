@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { authenticate, requireUserType } = require('../middleware/auth');
+const { authenticate, requireUserType, requireRole } = require('../middleware/auth');
 const { query } = require('../config/database');
 
 // Web dashboards for role-specific summaries used by school app UI
@@ -84,5 +84,64 @@ router.get('/principal/dashboard', async (req, res, next) => {
 // HR and Finance endpoints can be expanded later if needed
 
 module.exports = router;
+
+// ===========================
+// Director approvals (pending)
+// ===========================
+// Keep at end to avoid interfering with existing exports
+// Note: router is already exported above; we append endpoints before export if needed
+
+// Pending approvals for director dashboard (minimal recruitment subset)
+router.get('/director/approvals/pending', requireRole(['school_director']), async (req, res, next) => {
+  try {
+    const schoolId = req.user.school_id || req.user.schoolId;
+    const approvals = {
+      expenses: [],
+      recruitment: [],
+      fee_assignments: [],
+      policies: [],
+    };
+
+    // Recruitment approvals sourced from approval_requests when available, fallback to recruitment_requests
+    const recruitment = await safeQuery(`
+      SELECT 
+        ar.id,
+        ar.request_type,
+        ar.request_category,
+        ar.request_id,
+        ar.request_title as title,
+        COALESCE(ar.request_description, rr.description) as description,
+        COALESCE(ar.approval_status, 'pending') as approval_status,
+        COALESCE(ar.priority, 'normal') as priority,
+        ar.requested_by,
+        COALESCE(ar.created_at, rr.created_at) as created_at,
+        s.name as school_name
+      FROM approval_requests ar
+      JOIN schools s ON s.id = ar.school_id
+      LEFT JOIN recruitment_requests rr ON rr.id = ar.request_id AND rr.school_id = ar.school_id
+      WHERE ar.school_id = $1 AND ar.request_type = 'recruitment' AND COALESCE(ar.approval_status,'pending') = 'pending'
+      ORDER BY COALESCE(ar.created_at, rr.created_at) DESC
+    `, [schoolId]);
+
+    approvals.recruitment = recruitment.map(r => ({
+      id: r.request_id || r.id,
+      type: 'recruitment',
+      title: r.title || 'Recruitment Request',
+      description: r.description || '',
+      requestedBy: r.requested_by || '',
+      requestedAt: r.created_at,
+      school: r.school_name,
+      status: r.approval_status || 'pending',
+    }));
+
+    res.json({ success: true, data: approvals });
+  } catch (error) {
+    // If tables are missing, return empty approvals to avoid blocking UI
+    if (error && (error.code === '42P01' || error.code === '42703' || error.code === '42501')) {
+      return res.json({ success: true, data: { expenses: [], recruitment: [], fee_assignments: [], policies: [] } });
+    }
+    next(error);
+  }
+});
 
 

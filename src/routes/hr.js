@@ -186,7 +186,21 @@ router.put('/recruitment/requests/:requestId/approve',
   HRController.approveRecruitmentRequest
 );
 
+// POST alias for director mobile/web clients
+router.post('/recruitment/requests/:requestId/approve', 
+  authenticate, 
+  requireRole(['school_director']), 
+  HRController.approveRecruitmentRequest
+);
+
 router.put('/recruitment/requests/:requestId/reject', 
+  authenticate, 
+  requireRole(['school_director']), 
+  HRController.rejectRecruitmentRequest
+);
+
+// POST alias for director mobile/web clients
+router.post('/recruitment/requests/:requestId/reject', 
   authenticate, 
   requireRole(['school_director']), 
   HRController.rejectRecruitmentRequest
