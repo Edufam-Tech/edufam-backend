@@ -23,6 +23,7 @@ const adminRoutes = require('./admin');
 const communicationRoutes = require('./communication');
 const hrRoutes = require('./hr');
 const timetableRoutes = require('./timetable');
+const webRoutes = require('./web');
 
 
 
@@ -276,6 +277,7 @@ router.use('/hr', checkMaintenanceMode, schoolAuth, hrRoutes);
 // Communication and reporting routes
 router.use('/communication', checkMaintenanceMode, schoolAuth, communicationRoutes);
 router.use('/reports', checkMaintenanceMode, schoolAuth, reportsRoutes);
+router.use('/web', checkMaintenanceMode, schoolAuth, webRoutes);
 
 // Admin application routes (JWT admin users)
 router.use('/admin', adminRoutes);

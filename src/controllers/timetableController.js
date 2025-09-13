@@ -598,7 +598,9 @@ class TimetableController {
         params.push(classId);
       }
 
-      const result = await query(`
+      let result;
+      try {
+        result = await query(`
         SELECT 
           te.*,
           tv.version_name,
@@ -616,6 +618,13 @@ class TimetableController {
         ${whereClause}
         ORDER BY te.day_of_week, te.period_number, c.name
       `, params);
+      } catch (error) {
+        // Graceful fallback for missing tables/columns in some deployments
+        if (error && (error.code === '42P01' || error.code === '42703' || error.code === '42501')) {
+          return res.json({ success: true, data: [] });
+        }
+        throw error;
+      }
 
       res.json({
         success: true,

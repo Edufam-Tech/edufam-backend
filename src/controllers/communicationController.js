@@ -768,7 +768,16 @@ class CommunicationController {
         params.push(filters.offset);
       }
 
-      const result = await query(sql, params);
+      let result;
+      try {
+        result = await query(sql, params);
+      } catch (error) {
+        // If table or permission missing in some deployments, return empty list instead of 500
+        if (error && (error.code === '42P01' || error.code === '42501' || error.code === '42703')) {
+          return res.json({ success: true, data: [], pagination: { limit: filters.limit, offset: filters.offset, total: 0 } });
+        }
+        throw error;
+      }
 
       res.json({
         success: true,
