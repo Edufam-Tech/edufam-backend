@@ -4,6 +4,7 @@ const { authenticate, requireRole, requireUserType } = require('../middleware/au
 const { validate } = require('../middleware/validation');
 const { body, query, param } = require('express-validator');
 const SchoolController = require('../controllers/schoolController');
+const { query: dbQuery } = require('../config/database');
 
 // Apply authentication to all routes
 router.use(authenticate);
@@ -366,3 +367,109 @@ router.get('/statistics/enrollment-trends',
 );
 
 module.exports = router;
+
+// =============================================================================
+// SCHOOL CALENDAR EVENTS (CRUD)
+// =============================================================================
+
+// List calendar events for a given month/year
+router.get('/calendar/events', async (req, res, next) => {
+  try {
+    const schoolId = req.user.school_id || req.user.schoolId;
+    const month = parseInt(req.query.month, 10);
+    const year = parseInt(req.query.year, 10);
+    const params = [schoolId];
+    let dateFilter = '';
+    if (!isNaN(month) && !isNaN(year)) {
+      params.push(month, year);
+      dateFilter = 'AND EXTRACT(MONTH FROM start_at) = $2 AND EXTRACT(YEAR FROM start_at) = $3';
+    }
+    const result = await dbQuery(`
+      SELECT id, title, description, start_at, end_at, all_day, type, curriculum, class_ids
+      FROM calendar_events
+      WHERE school_id = $1 ${dateFilter}
+      ORDER BY start_at ASC
+    `, params);
+    const data = result.rows.map(r => ({
+      id: r.id,
+      title: r.title,
+      description: r.description,
+      start_at: r.start_at,
+      end_at: r.end_at,
+      all_day: r.all_day,
+      type: r.type,
+      curriculum: r.curriculum,
+      class_ids: r.class_ids,
+    }));
+    res.json({ success: true, data });
+  } catch (e) {
+    if (e && (e.code === '42P01' || e.code === '42703')) {
+      return res.json({ success: true, data: [] });
+    }
+    next(e);
+  }
+});
+
+// Create calendar event
+router.post('/calendar/events', async (req, res, next) => {
+  try {
+    const schoolId = req.user.school_id || req.user.schoolId;
+    const userId = req.user.userId;
+    const { title, description, startDate, endDate, type, allDay, curriculum, classes } = req.body || {};
+    if (!title || !startDate || !endDate || !type) {
+      return res.status(400).json({ success: false, message: 'title, startDate, endDate, and type are required' });
+    }
+    const result = await dbQuery(`
+      INSERT INTO calendar_events (school_id, title, description, start_at, end_at, all_day, type, curriculum, class_ids, created_by)
+      VALUES ($1, $2, $3, $4, $5, COALESCE($6,false), $7, $8, COALESCE($9, '{}')::uuid[], $10)
+      RETURNING *
+    `, [schoolId, title, description || null, startDate, endDate, allDay, type, curriculum || null, (classes && classes.length ? classes : null), userId]);
+    res.status(201).json({ success: true, data: result.rows[0] });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// Update calendar event
+router.put('/calendar/events/:id', async (req, res, next) => {
+  try {
+    const schoolId = req.user.school_id || req.user.schoolId;
+    const { id } = req.params;
+    const { title, description, startDate, endDate, type, allDay, curriculum, classes } = req.body || {};
+    const result = await dbQuery(`
+      UPDATE calendar_events
+      SET title = COALESCE($3, title),
+          description = COALESCE($4, description),
+          start_at = COALESCE($5, start_at),
+          end_at = COALESCE($6, end_at),
+          all_day = COALESCE($7, all_day),
+          type = COALESCE($8, type),
+          curriculum = COALESCE($9, curriculum),
+          class_ids = COALESCE($10::uuid[], class_ids),
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = $1 AND school_id = $2
+      RETURNING *
+    `, [id, schoolId, title || null, description || null, startDate || null, endDate || null, allDay, type || null, curriculum || null, (classes && classes.length ? classes : null)]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Event not found' });
+    }
+    res.json({ success: true, data: result.rows[0] });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// Delete calendar event
+router.delete('/calendar/events/:id', async (req, res, next) => {
+  try {
+    const schoolId = req.user.school_id || req.user.schoolId;
+    const { id } = req.params;
+    const result = await dbQuery('DELETE FROM calendar_events WHERE id = $1 AND school_id = $2 RETURNING id', [id, schoolId]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Event not found' });
+    }
+    res.json({ success: true, data: { id } });
+  } catch (e) {
+    next(e);
+  }
+});
